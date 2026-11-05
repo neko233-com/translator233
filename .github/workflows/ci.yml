@@ -45,6 +45,14 @@ jobs:
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w" \
               -o "dist/translator233-$os-$arch$ext" ./cmd/translator233
           done
+          # The desktop window only ships where ONNX Runtime has a prebuilt runtime.
+          for target in windows/amd64 linux/amd64 darwin/arm64; do
+            os=${target%/*}; arch=${target#*/}
+            ext=""; ldflags="-s -w"
+            if [ "$os" = "windows" ]; then ext=".exe"; ldflags="-s -w -H=windowsgui"; fi
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "$ldflags" \
+              -o "dist/translator233-gui-$os-$arch$ext" ./cmd/translator233-gui
+          done
           ls -la dist
       - uses: softprops/action-gh-release@v2
         with:

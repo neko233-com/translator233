@@ -20,12 +20,14 @@ func libExt() string {
 }
 
 func defaultThreads() int {
-	n := runtime.NumCPU() - 1
+	// Marian models are small: past 4 threads the synchronization cost cancels
+	// the gain, and extra threads starve concurrent requests.
+	n := runtime.NumCPU()
+	if n > 4 {
+		n = 4
+	}
 	if n < 1 {
 		n = 1
-	}
-	if n > 8 {
-		n = 8
 	}
 	return n
 }
