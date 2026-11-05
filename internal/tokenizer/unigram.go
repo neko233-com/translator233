@@ -13,22 +13,22 @@ import (
 
 // Tokenizer tokenizes text with a Unigram vocabulary.
 type Tokenizer struct {
-	vocab  map[string]int32
-	scores map[string]float32
-	trie   *trie
-	unkID  int32
-	eosID  int32
-	maxLen int
-	byID   []string
+	vocab    map[string]int32
+	scores   map[string]float32
+	trie     *trie
+	unkID    int32
+	eosID    int32
+	maxLen   int
+	byID     []string
 	unkScore float32
-	special map[int32]string
+	special  map[int32]string
 }
 
 type tokenizerJSON struct {
 	Model struct {
-		Type       string     `json:"type"`
-		UnkID      int32      `json:"unk_id"`
-		Vocab      [][]any    `json:"vocab"`
+		Type  string  `json:"type"`
+		UnkID int32   `json:"unk_id"`
+		Vocab [][]any `json:"vocab"`
 	} `json:"model"`
 	PostProcessor json.RawMessage `json:"post_processor"`
 	AddedTokens   []struct {

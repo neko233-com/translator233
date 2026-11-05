@@ -113,6 +113,8 @@ func (c *Catalog) Find(src, tgt string) (Pack, bool) {
 // Store is the installed-pack directory.
 type Store struct {
 	Dir string
+	// Connections is the number of parallel downloads per file (0 = default).
+	Connections int
 }
 
 // DefaultStore returns the user's pack store.
@@ -197,6 +199,10 @@ func (s *Store) Install(ctx context.Context, p Pack, prog Progress) error {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	conns := s.Connections
+	if conns <= 0 {
+		conns = dl.DefaultConnections
+	}
 	for _, name := range names {
 		f := p.FilesOf()[name]
 		dst := filepath.Join(dir, name)
@@ -204,7 +210,8 @@ func (s *Store) Install(ctx context.Context, p Pack, prog Progress) error {
 			continue
 		}
 		_, err := dl.To(ctx, p.URL(f), dst, dl.Options{
-			Timeout: 60e9,
+			Timeout:     60e9,
+			Connections: conns,
 			Progress: func(done, total int64) {
 				if prog != nil {
 					prog(name, done, total)

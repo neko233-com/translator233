@@ -12,15 +12,23 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/neko233-com/translator233/internal/lang"
+	"github.com/neko233-com/translator233/internal/llm"
 	"github.com/neko233-com/translator233/internal/pack"
 	"github.com/neko233-com/translator233/internal/rtsetup"
 	"github.com/neko233-com/translator233/internal/translate"
 )
 
 var version = "0.1.0"
+
+// noAutoInstall disables downloading missing language packs.
+var noAutoInstall bool
+
+// engineMode is one of auto, local, llm.
+var engineMode = "auto"
 
 const usage = `translator233 — 本地离线翻译引擎（CLI / GUI / HTTP）
 
@@ -33,18 +41,26 @@ const usage = `translator233 — 本地离线翻译引擎（CLI / GUI / HTTP）
   translator233 runtime status|install
   translator233 serve --addr 127.0.0.1:8765
   translator233 gui
+  translator233 config show|set-llm|clear-llm
   translator233 version
 
 翻译参数:
   -f, --from     源语言（默认 auto）
   -t, --to       目标语言（必填）
+      --engine   后端 auto|local|llm（默认 auto：本地优先）
   -j, --json     输出 JSON
       --jsonl    逐行 JSON（stdin 每行一条，适合批量/agent 管道）
       --raw      只输出译文
   -q, --quiet    静默（不输出进度到 stderr）
 
+语言包:
+  首次运行自动安装 zh-en / en-zh，其他语向在翻译时按需下载。
+  packs install 支持 -c N 指定并发连接数（默认 8）。
+
 环境变量:
-  TRANSLATOR233_HOME  数据目录（默认 ~/.translator233）
+  TRANSLATOR233_HOME       数据目录（默认 ~/.translator233）
+  DEEPSEEK_API_KEY         在线模型密钥（也可写入 config.json）
+  TRANSLATOR233_LLM_BASE_URL / TRANSLATOR233_LLM_MODEL
 `
 
 func main() {
@@ -66,6 +82,8 @@ func main() {
 		err = cmdServe(os.Args[2:])
 	case "gui":
 		err = cmdGUI(os.Args[2:])
+	case "config", "cfg":
+		err = cmdConfig(os.Args[2:])
 	case "version", "-v", "--version":
 		fmt.Printf("translator233 %s\n", version)
 	case "help", "-h", "--help":
@@ -81,11 +99,50 @@ func main() {
 }
 
 func newService(quiet bool) (*translate.Service, error) {
-	svc, err := translate.New(translate.Options{})
-	if err != nil {
-		return nil, err
+	cfg := llm.LoadConfig()
+	return translate.New(translate.Options{
+		AutoInstall: !noAutoInstall,
+		Progress:    packProgress(quiet),
+		Engine:      engineMode,
+		LLM:         &cfg,
+	})
+}
+
+var announced sync.Map
+
+// packProgress renders language pack downloads on stderr.
+func packProgress(quiet bool) func(packID, file string, done, total int64) {
+	if quiet {
+		return nil
 	}
-	return svc, nil
+	return func(packID, file string, done, total int64) {
+		if total <= 0 {
+			return
+		}
+		if _, seen := announced.LoadOrStore(packID, true); !seen {
+			fmt.Fprintf(os.Stderr, "下载语言包 %s（%s）…\n", packID, human(total))
+		}
+		pct := done * 100 / total
+		fmt.Fprintf(os.Stderr, "\r  %-32s %3d%%", packID+"/"+file, pct)
+		if done >= total {
+			fmt.Fprintln(os.Stderr)
+		}
+	}
+}
+
+// ensureDefaults installs the built-in Chinese/English packs on a fresh install.
+func ensureDefaults(svc *translate.Service, quiet bool) {
+	if noAutoInstall || engineMode == "llm" || svc.HasPacks() {
+		return
+	}
+	if !quiet {
+		fmt.Fprintln(os.Stderr, "首次使用：准备默认语言包（中文 ↔ 英语）…")
+	}
+	if err := svc.EnsureDefaults(context.Background()); err != nil {
+		if !quiet {
+			fmt.Fprintln(os.Stderr, "默认语言包安装失败（可稍后用 packs install 重试）: "+err.Error())
+		}
+	}
 }
 
 // ensureRuntime installs the ONNX Runtime on first use.
@@ -137,15 +194,17 @@ func cmdTranslate(args []string) error {
 	fs := flag.NewFlagSet("translate", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	var (
-		from   = fs.String("from", "auto", "源语言")
-		to     = fs.String("to", "", "目标语言")
-		asJSON = fs.Bool("json", false, "JSON 输出")
-		jsonl  = fs.Bool("jsonl", false, "每行一条 JSON")
-		raw    = fs.Bool("raw", false, "只输出译文")
-		quiet  = fs.Bool("quiet", false, "静默")
-		file   = fs.String("file", "", "从文件读取")
+		from     = fs.String("from", "auto", "源语言")
+		to       = fs.String("to", "", "目标语言")
+		asJSON   = fs.Bool("json", false, "JSON 输出")
+		jsonl    = fs.Bool("jsonl", false, "每行一条 JSON")
+		raw      = fs.Bool("raw", false, "只输出译文")
+		quiet    = fs.Bool("quiet", false, "静默")
+		file     = fs.String("file", "", "从文件读取")
 		noDaemon = fs.Bool("no-daemon", false, "不使用后台服务")
 	)
+	fs.BoolVar(&noAutoInstall, "no-auto-install", false, "缺少语言包时不自动下载")
+	fs.StringVar(&engineMode, "engine", "auto", "后端: auto|local|llm")
 	fs.StringVar(from, "f", "auto", "源语言")
 	fs.StringVar(to, "t", "", "目标语言")
 	fs.BoolVar(asJSON, "j", false, "JSON 输出")
@@ -165,6 +224,7 @@ func cmdTranslate(args []string) error {
 			return err
 		}
 		defer svc.Close()
+		ensureDefaults(svc, *quiet)
 		return runJSONL(svc, *from, *to, *quiet)
 	}
 
@@ -188,6 +248,7 @@ func cmdTranslate(args []string) error {
 		return err
 	}
 	defer svc.Close()
+	ensureDefaults(svc, *quiet)
 
 	res, err := svc.Translate(context.Background(), translate.Request{Text: text, Source: *from, Target: *to})
 	if err != nil {
@@ -238,6 +299,7 @@ func reorder(args []string) []string {
 		"-f": true, "--f": true, "-from": true, "--from": true,
 		"-t": true, "--t": true, "-to": true, "--to": true,
 		"-file": true, "--file": true,
+		"-engine": true, "--engine": true,
 	}
 	var flags, pos []string
 	for i := 0; i < len(args); i++ {
@@ -263,7 +325,29 @@ func reorder(args []string) []string {
 	return append(flags, pos...)
 }
 
-func readInput(file string, args []string) (string, error) {	if file != "" {
+// splitConns pulls `-c N` / `--connections N` out of args.
+func splitConns(args []string) ([]string, int) {
+	conns := 0
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-c" || a == "--connections":
+			if i+1 < len(args) {
+				i++
+				fmt.Sscanf(args[i], "%d", &conns)
+			}
+		case strings.HasPrefix(a, "--connections="):
+			fmt.Sscanf(strings.TrimPrefix(a, "--connections="), "%d", &conns)
+		default:
+			out = append(out, a)
+		}
+	}
+	return out, conns
+}
+
+func readInput(file string, args []string) (string, error) {
+	if file != "" {
 		b, err := os.ReadFile(file)
 		return string(b), err
 	}
@@ -316,10 +400,12 @@ func cmdPacks(args []string) error {
 			fmt.Printf("%s %-8s %-24s %8s\n", mark, p.ID, p.Name, human(p.TotalSize()))
 		}
 	case "install", "add":
-		if len(args) < 2 {
-			return errors.New("用法: translator233 packs install <id> [id...]")
+		ids, conns := splitConns(args[1:])
+		if len(ids) == 0 {
+			return errors.New("用法: translator233 packs install <id> [id...] [-c 8]")
 		}
-		for _, id := range args[1:] {
+		store.Connections = conns
+		for _, id := range ids {
 			p, ok := cat.Get(id)
 			if !ok {
 				return fmt.Errorf("未知语言包 %s", id)

@@ -16,15 +16,15 @@ import (
 
 // Config mirrors the fields of a Marian config.json that the runtime needs.
 type Config struct {
-	VocabSize         int `json:"vocab_size"`
-	DModel            int `json:"d_model"`
-	DecoderLayers     int `json:"decoder_layers"`
-	DecoderHeads      int `json:"decoder_attention_heads"`
-	MaxLength         int `json:"max_length"`
-	DecoderStartID    int `json:"decoder_start_token_id"`
-	EOSID             int `json:"eos_token_id"`
-	PadID             int `json:"pad_token_id"`
-	BadWordsIDs       [][]int `json:"bad_words_ids"`
+	VocabSize      int     `json:"vocab_size"`
+	DModel         int     `json:"d_model"`
+	DecoderLayers  int     `json:"decoder_layers"`
+	DecoderHeads   int     `json:"decoder_attention_heads"`
+	MaxLength      int     `json:"max_length"`
+	DecoderStartID int     `json:"decoder_start_token_id"`
+	EOSID          int     `json:"eos_token_id"`
+	PadID          int     `json:"pad_token_id"`
+	BadWordsIDs    [][]int `json:"bad_words_ids"`
 }
 
 // Options tunes a translation engine.

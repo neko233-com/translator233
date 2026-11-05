@@ -19,6 +19,8 @@ func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:8765", "监听地址")
 	open := fs.Bool("open", false, "启动后打开浏览器")
+	fs.StringVar(&engineMode, "engine", "auto", "后端: auto|local|llm")
+	fs.BoolVar(&noAutoInstall, "no-auto-install", false, "缺少语言包时不自动下载")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -30,6 +32,7 @@ func cmdServe(args []string) error {
 		return err
 	}
 	defer svc.Close()
+	ensureDefaults(svc, false)
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {

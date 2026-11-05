@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/neko233-com/translator233/internal/lang"
+	"github.com/neko233-com/translator233/internal/llm"
 	"github.com/neko233-com/translator233/internal/pack"
 	"github.com/neko233-com/translator233/internal/rtsetup"
 	"github.com/neko233-com/translator233/internal/translate"
@@ -38,9 +39,9 @@ func main() {
 	s := newState()
 	mygo.App.WhenReady(func() {
 		s.win = mygo.NewWindow(mygo.WindowOptions{
-			Title:  "translator233 — 本地离线翻译",
-			Width:  900,
-			Height: 620,
+			Title:   "translator233 — 本地离线翻译",
+			Width:   900,
+			Height:  620,
 			Content: ui.View(s.view),
 		})
 		go s.init()
@@ -106,7 +107,17 @@ func (s *state) init() {
 			return
 		}
 	}
-	svc, err := translate.New(translate.Options{})
+	svc, err := translate.New(translate.Options{
+		AutoInstall: true,
+		Engine:      "auto",
+		LLM:         llmConfig(),
+		Progress: func(packID, file string, done, total int64) {
+			if total <= 0 {
+				return
+			}
+			s.setNote(fmt.Sprintf("下载语言包 %s %d%%", packID, done*100/total))
+		},
+	})
 	if err != nil {
 		s.setNote("初始化失败: " + err.Error())
 		return
@@ -114,7 +125,17 @@ func (s *state) init() {
 	s.mu.Lock()
 	s.svc = svc
 	s.mu.Unlock()
+	s.setNote("检查默认语言包…")
+	if err := svc.EnsureDefaults(context.Background()); err != nil {
+		s.setNote(err.Error())
+		return
+	}
 	s.refresh("就绪")
+}
+
+func llmConfig() *llm.Config {
+	c := llm.LoadConfig()
+	return &c
 }
 
 func (s *state) setNote(msg string) {

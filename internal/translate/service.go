@@ -14,6 +14,7 @@ import (
 
 	"github.com/neko233-com/translator233/internal/appdir"
 	"github.com/neko233-com/translator233/internal/lang"
+	"github.com/neko233-com/translator233/internal/llm"
 	"github.com/neko233-com/translator233/internal/marian"
 	"github.com/neko233-com/translator233/internal/ort"
 	"github.com/neko233-com/translator233/internal/pack"
@@ -28,17 +29,40 @@ type Options struct {
 	MaxLoaded   int
 	CacheSize   int
 	MaxChars    int
+	// AutoInstall downloads a missing language pack on first use.
+	AutoInstall bool
+	// Progress reports pack downloads: pack id, current file, bytes, total.
+	Progress func(packID, file string, done, total int64)
+	// Engine selects the backend: "local" (default), "llm", or "auto"
+	// (local first, LLM when no local pack is available).
+	Engine string
+	// LLM configures the optional OpenAI-compatible backend.
+	LLM *llm.Config
 }
+
+// Engine names reported in Result.
+const (
+	EngineLocal = "local"
+	EngineLLM   = "llm"
+)
+
+// DefaultPacks are installed on first run; every other direction is downloaded
+// on demand.
+var DefaultPacks = []string{"zh-en", "en-zh"}
 
 // Service translates text with locally installed packs.
 type Service struct {
-	store   *pack.Store
-	catalog *pack.Catalog
-	runtime string
-	threads int
-	maxLd   int
-	maxChr  int
-	cache   *textCache
+	store      *pack.Store
+	catalog    *pack.Catalog
+	runtime    string
+	threads    int
+	maxLd      int
+	maxChr     int
+	cache      *textCache
+	auto       bool
+	prog       func(packID, file string, done, total int64)
+	engineMode string
+	llm        *llm.Config
 
 	mu      sync.Mutex
 	lib     *ort.Lib
@@ -80,15 +104,22 @@ func New(o Options) (*Service, error) {
 	if o.MaxChars <= 0 {
 		o.MaxChars = 380
 	}
+	if o.Engine == "" {
+		o.Engine = "local"
+	}
 	return &Service{
-		store:   o.Store,
-		catalog: o.Catalog,
-		runtime: o.RuntimePath,
-		threads: o.Threads,
-		maxLd:   o.MaxLoaded,
-		maxChr:  o.MaxChars,
-		cache:   newTextCache(o.CacheSize),
-		engines: make(map[string]*engineEntry),
+		store:      o.Store,
+		catalog:    o.Catalog,
+		runtime:    o.RuntimePath,
+		threads:    o.Threads,
+		maxLd:      o.MaxLoaded,
+		maxChr:     o.MaxChars,
+		cache:      newTextCache(o.CacheSize),
+		auto:       o.AutoInstall,
+		prog:       o.Progress,
+		engineMode: o.Engine,
+		llm:        o.LLM,
+		engines:    make(map[string]*engineEntry),
 	}, nil
 }
 
@@ -105,6 +136,7 @@ type Result struct {
 	Source   string  `json:"source"`
 	Target   string  `json:"target"`
 	Pack     string  `json:"pack"`
+	Engine   string  `json:"engine"`
 	Segments int     `json:"segments"`
 	Cached   bool    `json:"cached"`
 	Millis   float64 `json:"ms"`
@@ -136,16 +168,22 @@ func (s *Service) Translate(ctx context.Context, req Request) (*Result, error) {
 		}
 	}
 	if source == target {
-		return &Result{Text: text, Source: source, Target: target, Pack: "(identity)"}, nil
+		return &Result{Text: text, Source: source, Target: target, Pack: "(identity)", Engine: EngineLocal}, nil
+	}
+	if s.engineMode == "llm" {
+		return s.translateLLM(ctx, text, source, target, start)
 	}
 
-	steps, err := s.plan(source, target)
+	steps, err := s.plan(ctx, source, target)
 	if err != nil {
+		if s.engineMode == "auto" && s.llm != nil && s.llm.Enabled() {
+			return s.translateLLM(ctx, text, source, target, start)
+		}
 		return nil, err
 	}
 	key := steps[0].id + "\x00" + strings.Join([]string{source, target}, ">") + "\x00" + text
 	if cached, ok := s.cache.Get(key); ok {
-		return &Result{Text: cached, Source: source, Target: target, Pack: steps[0].id,
+		return &Result{Text: cached, Source: source, Target: target, Pack: steps[0].id, Engine: EngineLocal,
 			Cached: true, Millis: float64(time.Since(start).Microseconds()) / 1000}, nil
 	}
 
@@ -175,6 +213,7 @@ func (s *Service) Translate(ctx context.Context, req Request) (*Result, error) {
 		Source:   source,
 		Target:   target,
 		Pack:     steps[0].id,
+		Engine:   EngineLocal,
 		Segments: len(segs),
 		Millis:   float64(time.Since(start).Microseconds()) / 1000,
 	}
@@ -187,10 +226,10 @@ func (s *Service) Translate(ctx context.Context, req Request) (*Result, error) {
 
 type step struct{ id string }
 
-func (s *Service) plan(source, target string) ([]step, error) {
+func (s *Service) plan(ctx context.Context, source, target string) ([]step, error) {
 	if p, ok := s.catalog.Find(source, target); ok {
-		if !s.store.IsInstalled(p) {
-			return nil, &ErrNoPack{ID: p.ID}
+		if err := s.ensure(ctx, p); err != nil {
+			return nil, err
 		}
 		return []step{{id: p.ID}}, nil
 	}
@@ -198,16 +237,63 @@ func (s *Service) plan(source, target string) ([]step, error) {
 		a, okA := s.catalog.Find(source, "en")
 		b, okB := s.catalog.Find("en", target)
 		if okA && okB {
-			if !s.store.IsInstalled(a) {
-				return nil, &ErrNoPack{ID: a.ID}
+			if err := s.ensure(ctx, a); err != nil {
+				return nil, err
 			}
-			if !s.store.IsInstalled(b) {
-				return nil, &ErrNoPack{ID: b.ID}
+			if err := s.ensure(ctx, b); err != nil {
+				return nil, err
 			}
 			return []step{{id: a.ID}, {id: b.ID}}, nil
 		}
 	}
 	return nil, fmt.Errorf("没有 %s → %s 的语言包（可用 pivot: %s → en → %s）", source, target, source, target)
+}
+
+// ensure installs a pack when auto-install is enabled.
+func (s *Service) ensure(ctx context.Context, p pack.Pack) error {
+	if s.store.IsInstalled(p) {
+		return nil
+	}
+	if !s.auto {
+		return &ErrNoPack{ID: p.ID}
+	}
+	return s.InstallPack(ctx, p)
+}
+
+// InstallPack downloads one pack, reporting progress through Options.Progress.
+func (s *Service) InstallPack(ctx context.Context, p pack.Pack) error {
+	if err := s.store.Install(ctx, p, func(file string, done, total int64) {
+		if s.prog != nil {
+			s.prog(p.ID, file, done, total)
+		}
+	}); err != nil {
+		return fmt.Errorf("安装语言包 %s 失败: %w", p.ID, err)
+	}
+	return nil
+}
+
+// EnsureDefaults installs the default Chinese/English packs when no pack is
+// installed yet. Every other direction is fetched on demand.
+func (s *Service) EnsureDefaults(ctx context.Context) error {
+	if s.HasPacks() {
+		return nil
+	}
+	for _, id := range DefaultPacks {
+		p, ok := s.catalog.Get(id)
+		if !ok {
+			continue
+		}
+		if err := s.InstallPack(ctx, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// HasPacks reports whether at least one language pack is installed.
+func (s *Service) HasPacks() bool {
+	list, err := s.store.List()
+	return err == nil && len(list) > 0
 }
 
 func (s *Service) engine(id string) (*marian.Engine, error) {
@@ -397,6 +483,51 @@ func isCJKPunct(r rune) bool {
 	}
 	return false
 }
+
+// translateLLM renders text through the OpenAI-compatible backend.
+func (s *Service) translateLLM(ctx context.Context, text, source, target string, start time.Time) (*Result, error) {
+	if s.llm == nil || !s.llm.Enabled() {
+		return nil, fmt.Errorf("未配置在线模型：设置 DEEPSEEK_API_KEY 或运行 translator233 config set-llm")
+	}
+	key := "llm\x00" + source + ">" + target + "\x00" + text
+	if cached, ok := s.cache.Get(key); ok {
+		return &Result{Text: cached, Source: source, Target: target, Pack: s.llm.Model, Engine: EngineLLM,
+			Cached: true, Millis: float64(time.Since(start).Microseconds()) / 1000}, nil
+	}
+	chunks := []string{text}
+	if len([]rune(text)) > 3000 {
+		chunks = Split(text, 3000)
+	}
+	out := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		if strings.TrimSpace(chunk) == "" {
+			out = append(out, chunk)
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		tr, err := s.llm.Translate(ctx, chunk, source, target)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, tr)
+	}
+	joined := joinSegments(out)
+	s.cache.Add(key, joined)
+	return &Result{
+		Text:     joined,
+		Source:   source,
+		Target:   target,
+		Pack:     s.llm.Model,
+		Engine:   EngineLLM,
+		Segments: len(chunks),
+		Millis:   float64(time.Since(start).Microseconds()) / 1000,
+	}, nil
+}
+
+// Engine reports the configured backend.
+func (s *Service) Engine() string { return s.engineMode }
 
 // InstalledPacks lists packs available on disk.
 func (s *Service) InstalledPacks() ([]pack.Installed, error) { return s.store.List() }

@@ -1,10 +1,23 @@
 bin/
 dist/
+docs/*.tmp
+
+# 语言包 / 模型权重：一律按需下载，不进仓库
 .cache/
-.codely-cli/
+packs/
+*.onnx
+*.safetensors
+*.part
+
+# 本地配置（可能含 API 密钥）
+config.json
+daemon.json
+CODELY.md
+
 *.exe
 *.test
 *.out
 .DS_Store
 .idea/
 .vscode/
+.codely-cli/
