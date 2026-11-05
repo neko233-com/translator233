@@ -47,6 +47,7 @@ bin/translator233 serve
 
 ```bash
 TRANSLATOR233_THREADS=8                 # 推理线程数（默认 min(CPU,4)，实测 1/2/4/8 差异 <7%）
+TRANSLATOR233_MAX_MODELS=1              # 常驻模型数（默认 2；1 可把内存从 ~500MB 降到 ~350MB）
 TRANSLATOR233_SESSION_CONFIG="k=v;..."  # 透传 ORT session 配置
 ```
 

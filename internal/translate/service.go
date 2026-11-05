@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -101,6 +102,9 @@ func New(o Options) (*Service, error) {
 	}
 	if o.MaxLoaded <= 0 {
 		o.MaxLoaded = 2
+		if v, err := strconv.Atoi(os.Getenv("TRANSLATOR233_MAX_MODELS")); err == nil && v > 0 {
+			o.MaxLoaded = v
+		}
 	}
 	if o.CacheSize <= 0 {
 		o.CacheSize = 1024
