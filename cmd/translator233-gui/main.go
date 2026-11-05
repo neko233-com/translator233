@@ -188,7 +188,7 @@ func (s *state) view(c *ui.Context) {
 		s.src = codeOf(srcDisplay)
 		s.tgt = codeOf(tgtDisplay)
 
-		ui.Row(c).Fill().Gap(12).Children(func() {
+		ui.Row(c).Fill().AlignItems(ui.Stretch).Gap(12).Children(func() {
 			ui.Column(c).FillWidth().Grow(1).Gap(6).Children(func() {
 				ui.Text(c, "原文").FontSize(12).TextColor(t.TextMuted)
 				ui.TextArea(c, &s.in).FillHeight().Placeholder("输入要翻译的文本…")

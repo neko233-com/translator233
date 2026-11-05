@@ -97,6 +97,8 @@ go build -o bin/translator233-gui ./cmd/translator233-gui
 bin/translator233-gui
 ```
 
+![GUI](docs/gui.png)
+
 基于 [MyGo](https://github.com/egoist/mygo) 的原生 UI（自绘 GPU 界面，不是 webview，也不是 cgo）：语言下拉、双栏文本区、交换/清空/复制、实时耗时状态。首次启动会在后台自动安装 ONNX Runtime。
 
 ## 架构
