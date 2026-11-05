@@ -86,21 +86,31 @@ func To(ctx context.Context, rawURL, dst string, o Options) (string, error) {
 	if o.Connections <= 0 {
 		o.Connections = DefaultConnections
 	}
+	var firstErr error
 	var lastErr error
+	tried := 0
 	for _, candidate := range Candidates(rawURL) {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
+		tried++
 		used, err := attempt(ctx, candidate, dst, o)
 		if err == nil {
 			return used, nil
+		}
+		if firstErr == nil {
+			firstErr = err
 		}
 		lastErr = err
 	}
 	if lastErr == nil {
 		lastErr = errors.New("no download source")
 	}
-	return "", lastErr
+	if tried == 1 {
+		return "", lastErr
+	}
+	// Report the direct URL's failure: a 404 there explains everything.
+	return "", fmt.Errorf("%w（另试了 %d 个镜像）", firstErr, tried-1)
 }
 
 func attempt(ctx context.Context, url, dst string, o Options) (string, error) {
