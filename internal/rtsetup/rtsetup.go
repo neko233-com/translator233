@@ -42,27 +42,23 @@ func Installed() bool {
 	return err == nil && st.Size() > 0
 }
 
+// asset names the ONNX Runtime release archive for the current platform.
+//
+// Supported targets are the desktop ones we ship: Windows x64/arm64 and macOS
+// Apple Silicon. ONNX Runtime publishes no 32-bit Windows or Intel macOS build
+// for this version, and Linux is out of scope.
 func asset() (string, string, error) {
-	switch runtime.GOOS {
-	case "windows":
-		arch, ok := map[string]string{"amd64": "x64", "arm64": "arm64", "386": "x86"}[runtime.GOARCH]
-		if !ok {
-			return "", "", fmt.Errorf("unsupported windows architecture %q", runtime.GOARCH)
-		}
-		return fmt.Sprintf("onnxruntime-win-%s-%s.zip", arch, Version), "zip", nil
-	case "linux":
-		arch, ok := map[string]string{"amd64": "x64", "arm64": "aarch64"}[runtime.GOARCH]
-		if !ok {
-			return "", "", fmt.Errorf("unsupported linux architecture %q", runtime.GOARCH)
-		}
-		return fmt.Sprintf("onnxruntime-linux-%s-%s.tgz", arch, Version), "tgz", nil
-	case "darwin":
-		if runtime.GOARCH != "arm64" {
-			return "", "", fmt.Errorf("ONNX Runtime %s 不再提供 macOS %s 预编译包", Version, runtime.GOARCH)
-		}
+	switch {
+	case runtime.GOOS == "windows" && (runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64"):
+		return fmt.Sprintf("onnxruntime-win-%s-%s.zip", runtime.GOARCH, Version), "zip", nil
+	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
 		return fmt.Sprintf("onnxruntime-osx-arm64-%s.tgz", Version), "tgz", nil
+	case runtime.GOOS == "windows":
+		return "", "", fmt.Errorf("ONNX Runtime %s 不提供 Windows %s 预编译包（仅 x64 / arm64）", Version, runtime.GOARCH)
+	case runtime.GOOS == "darwin":
+		return "", "", fmt.Errorf("ONNX Runtime %s 不提供 macOS %s 预编译包（仅 Apple Silicon）", Version, runtime.GOARCH)
 	}
-	return "", "", fmt.Errorf("unsupported platform %s/%s", runtime.GOOS, runtime.GOARCH)
+	return "", "", fmt.Errorf("不支持的操作系统 %s（仅支持 Windows 与 macOS）", runtime.GOOS)
 }
 
 // Ensure downloads the runtime if it is missing and returns the library path.

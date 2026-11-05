@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"net/http"
@@ -9,20 +10,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/neko233-com/translator233/internal/pack"
 	"github.com/neko233-com/translator233/internal/translate"
 )
 
 //go:embed index.html
 var indexHTML []byte
 
-// Server wraps a translate.Service as an HTTP handler.
+// Translator is the service the HTTP layer needs.
+type Translator interface {
+	Translate(ctx context.Context, req translate.Request) (*translate.Result, error)
+	InstalledPacks() ([]pack.Installed, error)
+}
+
+// Server wraps a Translator as an HTTP handler.
 type Server struct {
-	svc     *translate.Service
+	svc     Translator
 	version string
 }
 
 // New creates a Server.
-func New(svc *translate.Service, version string) *Server {
+func New(svc Translator, version string) *Server {
 	return &Server{svc: svc, version: version}
 }
 

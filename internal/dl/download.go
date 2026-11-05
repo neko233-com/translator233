@@ -106,7 +106,7 @@ func attempt(ctx context.Context, url, dst string, o Options) (string, error) {
 		return "", err
 	}
 	size, ranges := probe(ctx, url, o.Timeout)
-	if ranges && size > chunkSize && o.Connections > 1 {
+	if ranges && size > chunkSize && o.Connections > 1 && !o.NoSplit {
 		if err := parallel(ctx, url, dst, size, o); err == nil {
 			return url, nil
 		}

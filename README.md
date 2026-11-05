@@ -135,6 +135,16 @@ curl -s -X POST http://127.0.0.1:8765/v1/translate \
 
 `serve` 会把监听地址写进 `~/.translator233/daemon.json`，CLI 检测到后自动转发，因此脚本无需改动即可享受常驻服务的延迟。
 
+## 平台支持
+
+| 平台 | CLI | GUI | ONNX Runtime |
+| --- | --- | --- | --- |
+| Windows x64 | ✅ | ✅ | 自动下载 |
+| Windows arm64 | ✅ | ✅ | 自动下载 |
+| macOS Apple Silicon (arm64) | ✅ | ✅ | 自动下载 |
+
+只面向桌面端这三个目标。32 位 Windows 与 Intel macOS 不在支持范围（ONNX Runtime 1.31 已不再发布对应预编译包，程序会给出明确报错而不是崩溃）。
+
 ## GUI
 
 ```bash
@@ -144,7 +154,7 @@ bin/translator233-gui
 
 ![GUI](docs/gui.png)
 
-基于 [MyGo](https://github.com/egoist/mygo) 的原生 UI（自绘 GPU 界面，不是 webview，也不是 cgo）：语言下拉、双栏文本区、交换/清空/复制、实时耗时状态。首次启动会在后台自动安装 ONNX Runtime。
+基于 [MyGo](https://github.com/egoist/mygo) 的原生 UI（自绘 GPU 界面，不是 webview，也不是 cgo）：语言下拉、双栏文本区、交换/清空/复制、实时耗时状态。窗口可自由拖拽缩放，双栏文本框按比例拉伸（最小 520×380），首次启动会在后台自动安装 ONNX Runtime 和默认语言包。
 
 ## 架构
 
@@ -170,13 +180,26 @@ internal/api             HTTP 接口与内嵌网页
 go run tools/genortapi/main.go <onnxruntime_c_api.h> internal/ort/api_offsets.go
 ```
 
-## 开发
+## 测试
 
 ```bash
-go build ./...
 go vet ./...
-go test ./...
+go test ./...          # 单元 + 无头 GUI 布局测试，秒级
+
+# 真实端到端：构建 CLI、下载运行时与中英语言包（~300MB），跑翻译/JSONL/HTTP/守护进程
+TRANSLATOR233_E2E=1 go test ./e2e -v -timeout 40m
 ```
+
+| 测试 | 覆盖内容 |
+| --- | --- |
+| `internal/dl` | 单连接 / 8 路分片 / 无 Range 回退 / 403 报错 / 镜像 URL 生成 / 取消与 `.part` 清理 |
+| `internal/pack` | 安装→校验→列表→重装幂等→删除；缺文件报错（httptest 假仓库） |
+| `internal/api` | `/health`、`/v1/translate` 校验与错误映射、`/v1/languages`、CORS 预检、404 |
+| `internal/gui` | 无头渲染（`ui.NewTester`）：控件齐全、**窗口放大后双栏同步增长且等宽**、520×380 不溢出、后台翻译回填、无服务提示 |
+| `internal/tokenizer` / `translate` / `lang` | Unigram 往返与 unk 回退、分句与拼接、语言检测 |
+| `e2e` | 真机跑二进制：中译英 JSON、stdin JSONL 批量、语言自动检测、`packs list`、`serve` HTTP + CLI 复用守护进程 |
+
+CI 在 Windows / macOS 上跑 vet + 全部单元测试 + 全量构建；`e2e` 只在手动触发或打 tag 时运行（要下载 300MB）。
 
 `TRANSLATOR233_HOME` 可以指向临时目录，避免污染真实用户目录；`TRANSLATOR233_DEBUG=1` 会打印 daemon 转发失败原因。
 

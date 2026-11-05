@@ -29,14 +29,16 @@ type File struct {
 
 // Pack is one downloadable translation model.
 type Pack struct {
-	ID     string          `json:"id"`
-	Source string          `json:"source"`
-	Target string          `json:"target"`
-	Name   string          `json:"name"`
-	Repo   string          `json:"repo"`
-	Rev    string          `json:"rev,omitempty"`
-	Files  map[string]File `json:"files,omitempty"`
-	Size   int64           `json:"size,omitempty"`
+	ID     string `json:"id"`
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Name   string `json:"name"`
+	Repo   string `json:"repo"`
+	Rev    string `json:"rev,omitempty"`
+	// Base overrides the Hugging Face host, for mirrors and tests.
+	Base  string          `json:"base,omitempty"`
+	Files map[string]File `json:"files,omitempty"`
+	Size  int64           `json:"size,omitempty"`
 }
 
 // Catalog is the set of known packs.
@@ -83,7 +85,11 @@ func (p Pack) URL(f File) string {
 	if rev == "" {
 		rev = "main"
 	}
-	return fmt.Sprintf("https://huggingface.co/%s/resolve/%s/%s", p.Repo, rev, f.From)
+	base := p.Base
+	if base == "" {
+		base = "https://huggingface.co"
+	}
+	return fmt.Sprintf("%s/%s/resolve/%s/%s", strings.TrimSuffix(base, "/"), p.Repo, rev, f.From)
 }
 
 // LoadCatalog parses the embedded catalog.
