@@ -159,14 +159,6 @@ func cmdTranslate(args []string) error {
 	if err := ensureRuntime(*quiet); err != nil {
 		return err
 	}
-	text, err := readInput(*file, fs.Args())
-	if err != nil {
-		return err
-	}
-	if text == "" && !*jsonl {
-		return errors.New("没有输入文本")
-	}
-
 	if *jsonl {
 		svc, err := newService(*quiet)
 		if err != nil {
@@ -174,6 +166,14 @@ func cmdTranslate(args []string) error {
 		}
 		defer svc.Close()
 		return runJSONL(svc, *from, *to, *quiet)
+	}
+
+	text, err := readInput(*file, fs.Args())
+	if err != nil {
+		return err
+	}
+	if text == "" {
+		return errors.New("没有输入文本")
 	}
 
 	// A resident `serve` answers in milliseconds; fall back to in-process.
