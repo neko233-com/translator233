@@ -105,6 +105,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "wix failed for $arch" }
           }
           Remove-Item -Recurse -Force dist/stage-*
+          Remove-Item -Force dist/*.wixpdb -ErrorAction SilentlyContinue
           Get-ChildItem dist/*.msi | Select-Object Name, Length
 
       - name: Checksums
@@ -119,5 +120,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+
 
 

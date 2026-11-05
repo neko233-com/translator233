@@ -11,7 +11,7 @@ import (
 )
 
 // version is stamped at build time with -X main.version.
-var version = "1.0.1"
+var version = "1.0.3"
 
 func windowOptions() mygo.WindowOptions {
 	return mygo.WindowOptions{
@@ -39,3 +39,4 @@ func main() {
 		log.Fatal(err)
 	}
 }
+

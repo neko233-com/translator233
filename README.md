@@ -58,6 +58,34 @@ TRANSLATOR233_SESSION_CONFIG="k=v;..."  # 透传 ORT session 配置
 
 下载相关：默认 16 路分片并发，包内多个文件并行下载且大文件优先；`packs install -c N` 可覆盖。
 
+## 安装（Windows MSI）
+
+从 [Releases](https://github.com/neko233-com/translator233/releases/latest) 下载 `translator233-windows-amd64.msi`（arm64 用 `-arm64`），双击或：
+
+```powershell
+msiexec /i translator233-windows-amd64.msi
+```
+
+- **免管理员权限**：按用户安装到 `%LOCALAPPDATA%\Programs\translator233`（`Scope="perUser"`），不弹 UAC。
+- 写入**用户 PATH**，装完在新终端里可直接敲 `translator233`。
+- 开始菜单生成快捷方式；从「应用和功能」卸载时 PATH 与快捷方式一并清理。
+- 升级用 `MajorUpgrade`，装新版本自动替换旧版本。
+
+macOS 不分发安装包：下载 `translator233-darwin-arm64` 与 `translator233-gui-darwin-arm64`，`chmod +x` 后放进 `~/.local/bin`。
+
+## 自动更新
+
+```bash
+translator233 update --check     # 只检查
+translator233 update             # 检查并安装（校验 sha256）
+translator233 update --json      # 给脚本用
+```
+
+- 读取 GitHub Releases 的 `latest`，按 `GOOS/GOARCH` 选产物：Windows 用 MSI，macOS 直接替换二进制。
+- 下载走与语言包相同的镜像加速；发布附带的 `checksums.txt` 会做 SHA-256 校验，校验失败不安装。
+- Windows 上安装包要替换"正在运行的 exe"，更新器会先把自己复制到 `%TEMP%` 再执行 `msiexec /qn`，原进程可立即退出；日志在 `~/.translator233/cache/update.log`。
+- GUI 启动时后台检查，发现新版本会在标题栏出现「更新到 vX」按钮，点击后下载安装并退出。
+
 ## CLI
 
 ```bash

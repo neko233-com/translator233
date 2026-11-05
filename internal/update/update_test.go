@@ -85,4 +85,3 @@ func TestVerifySHA256(t *testing.T) {
 		t.Fatal("expected a mismatch error")
 	}
 }
-

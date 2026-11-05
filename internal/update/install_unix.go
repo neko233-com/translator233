@@ -51,3 +51,6 @@ func Install(_ context.Context, path string, installer bool) error {
 func RelaunchHint() string {
 	return "已替换为最新版本，重新启动即可生效。"
 }
+
+// ApplyMSI is a no-op outside Windows.
+func ApplyMSI(msiPath, logPath string) error { return fmt.Errorf("MSI 只能在 Windows 上安装") }

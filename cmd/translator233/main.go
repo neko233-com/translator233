@@ -22,7 +22,7 @@ import (
 	"github.com/neko233-com/translator233/internal/translate"
 )
 
-var version = "1.0.1"
+var version = "1.0.3"
 
 // noAutoInstall disables downloading missing language packs.
 var noAutoInstall bool
@@ -496,3 +496,4 @@ func cmdRuntime(args []string) error {
 	}
 	return nil
 }
+
