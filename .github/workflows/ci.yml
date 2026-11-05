@@ -1,5 +1,8 @@
 name: ci
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [main]
@@ -74,3 +77,4 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+

@@ -42,6 +42,7 @@ bin/translator233 serve
 | 命中缓存的调用（含进程启动） | **15ms** |
 | 单句推理（20 token 左右） | 120–200ms |
 | 常驻内存（2 个语向） | 约 500MB |
+| GUI 空闲内存（未翻译） | **76MB** |
 
 调优开关：
 
@@ -194,7 +195,17 @@ bin/translator233-gui
 
 ![GUI](docs/gui.png)
 
-基于 [MyGo](https://github.com/egoist/mygo) 的原生 UI（自绘 GPU 界面，不是 webview，也不是 cgo）：语言下拉、双栏文本区、交换/清空/复制、实时耗时状态。窗口可自由拖拽缩放，双栏文本框按比例拉伸（最小 520×380），首次启动会在后台自动安装 ONNX Runtime 和默认语言包。
+深色模式（跟随系统）：
+
+![GUI dark](docs/gui-dark.png)
+
+基于 [MyGo](https://github.com/egoist/mygo) 的原生 UI，不是 webview、不是 cgo、也没有内嵌浏览器：
+
+- **Liquid Glass 毛玻璃**：主面板用 `plugins/glass` 的液态玻璃材质（GPU/CPU 着色器，Windows 与 macOS 同一套观感），背景是两团径向柔光，隔着玻璃看到的是被磨砂后的色晕。
+- **自适应布局**：双栏文本框随窗口等比拉伸，最小 620×480，按钮行与状态栏贴底。
+- **轻**：空闲时 76MB RSS（模型首次翻译才加载），暗色/亮色跟随系统主题。
+
+界面全部是 Go 代码绘制的（`internal/gui`），同一份 `View` 由 `ui.NewTester` 在无头环境里跑布局断言，CI 里能直接测"窗口放大后双栏是否同步增长"。
 
 ## 架构
 

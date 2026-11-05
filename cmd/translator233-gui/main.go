@@ -10,20 +10,20 @@ import (
 	"github.com/neko233-com/translator233/internal/gui"
 )
 
-func setTitleBarStyle() mygo.WindowOptions {
+func windowOptions() mygo.WindowOptions {
 	return mygo.WindowOptions{
 		Title:     "translator233 — 本地离线翻译",
-		Width:     900,
-		Height:    620,
-		MinWidth:  520,
-		MinHeight: 380,
+		Width:     980,
+		Height:    700,
+		MinWidth:  640,
+		MinHeight: 480,
 	}
 }
 
 func main() {
 	state := gui.New()
 	mygo.App.WhenReady(func() {
-		opts := setTitleBarStyle()
+		opts := windowOptions()
 		opts.Content = ui.View(state.View)
 		win := mygo.NewWindow(opts)
 		state.BindRedraw(func(fn func()) { win.Update(fn) })
