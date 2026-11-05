@@ -7,7 +7,29 @@
       "target": "en",
       "name": "中文 → 英语",
       "repo": "Xenova/opus-mt-zh-en",
-      "size": 119122297
+      "size": 80185024,
+      "files": {
+        "encoder.onnx": {
+          "from": "https://github.com/neko233-com/translator233/releases/download/packs-v1/zh-en-encoder.onnx",
+          "size": 160551
+        },
+        "decoder.onnx": {
+          "from": "https://github.com/neko233-com/translator233/releases/download/packs-v1/zh-en-decoder.onnx",
+          "size": 827718
+        },
+        "weights.bin": {
+          "from": "https://github.com/neko233-com/translator233/releases/download/packs-v1/zh-en-weights.bin",
+          "size": 78243456
+        },
+        "tokenizer.tok": {
+          "from": "https://github.com/neko233-com/translator233/releases/download/packs-v1/zh-en-tokenizer.tok",
+          "size": 951910
+        },
+        "config.json": {
+          "from": "https://github.com/neko233-com/translator233/releases/download/packs-v1/zh-en-config.json",
+          "size": 1389
+        }
+      }
     },
     {
       "id": "en-zh",
@@ -15,7 +37,29 @@
       "target": "zh",
       "name": "英语 → 中文",
       "repo": "Xenova/opus-mt-en-zh",
-      "size": 119122297
+      "size": 80185017,
+      "files": {
+        "encoder.onnx": {
+          "from": "https://github.com/neko233-com/translator233/releases/download/packs-v1/en-zh-encoder.onnx",
+          "size": 160552
+        },
+        "decoder.onnx": {
+          "from": "https://github.com/neko233-com/translator233/releases/download/packs-v1/en-zh-decoder.onnx",
+          "size": 827719
+        },
+        "weights.bin": {
+          "from": "https://github.com/neko233-com/translator233/releases/download/packs-v1/en-zh-weights.bin",
+          "size": 78243456
+        },
+        "tokenizer.tok": {
+          "from": "https://github.com/neko233-com/translator233/releases/download/packs-v1/en-zh-tokenizer.tok",
+          "size": 951787
+        },
+        "config.json": {
+          "from": "https://github.com/neko233-com/translator233/releases/download/packs-v1/en-zh-config.json",
+          "size": 1503
+        }
+      }
     },
     {
       "id": "ja-en",
@@ -307,4 +351,3 @@
     }
   ]
 }
-

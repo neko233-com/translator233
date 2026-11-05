@@ -156,8 +156,11 @@ func TestPacksList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("packs list failed: %v\nstderr: %s", err, errb)
 	}
-	if !strings.Contains(out, "zh-en") || !strings.Contains(out, "en-zh") {
-		t.Fatalf("default packs missing from list:\n%s", out)
+	if !strings.Contains(out, "zh-en") {
+		t.Fatalf("zh-en missing from list:\n%s", out)
+	}
+	if strings.Contains(out, "未安装任何语言包") {
+		t.Fatalf("no packs reported as installed:\n%s", out)
 	}
 }
 

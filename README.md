@@ -5,7 +5,7 @@
 - **完全离线**：语言包下载后不再联网，无 API Key、无调用费用。
 - **零 cgo**：`onnxruntime_go` 需要 C 编译器，这里用 `purego` 直接调用 ONNX Runtime 的 C API，任何机器 `go build` 即可。
 - **超快**：常驻服务模式下单次请求 **10–20ms**（含进程启动），首句推理 50–200ms。
-- **超轻**：每个语向约 120MB（int8 量化 Marian 模型），运行时按需加载，最多驻留 2 个模型。
+- **超轻**：每个语向 **80MB**（自研精简打包，比原始导出小 33%），运行时按需加载，最多驻留 2 个模型。
 - **镜像加速**：GitHub / Hugging Face 下载自动回退到国内镜像（`ghfast.top`、`hf-mirror.com` 等）。
 
 ## 快速开始
@@ -28,7 +28,8 @@ bin/translator233 serve
 | --- | --- |
 | 二进制（CLI） | 11.6 MB |
 | ONNX Runtime 运行库 | 17.3 MB |
-| 每个语向语言包 | 113.6 MB（int8，含 tokenizer） |
+| 每个语向语言包 | **80.2 MB**（精简版，原 113.6 MB） |
+| 首次运行合计（运行库 + 中英双向） | 约 178 MB |
 
 ## CLI
 
@@ -82,17 +83,34 @@ translator233 packs remove ja-en     # 删除
 
 安装位置：`~/.translator233/packs/<id>/`，可用 `TRANSLATOR233_HOME` 覆盖根目录（语言包、配置、运行库都不进仓库，见 `.gitignore`）。
 
-### 为什么每个语向是 113MB
+### 80MB 是怎么来的（自研精简打包）
 
-| 文件 | 体积 | 说明 |
-| --- | --- | --- |
-| `encoder.onnx` | 52.7 MB | int8 量化，6 层 Marian 编码器 |
-| `decoder.onnx` | 60.0 MB | int8 量化，合并了带/不带 KV cache 的解码器 |
-| `tokenizer.json` | 6.4 MB | SentencePiece Unigram 词表（65001 词） |
+原始的 Hugging Face 导出每个语向 113.6MB，其中有一大块是纯浪费：
 
-已实测的其它档位都不划算：`q4` 变体反而更大（146MB + 150MB，因为保留 fp16 激活），`q4f16` 78MB 单边、`uint8` 与 `int8` 同体积。**int8 已是 Hugging Face 上可用的最小档**，且实测质量明显好于 `quantized` 变体（后者会把 `agent` 译成 `<unk>`）。
+| 文件 | 精简前 | 精简后 | 做法 |
+| --- | --- | --- | --- |
+| `encoder.onnx` | 52.7 MB | 0.16 MB | 权重改为 ONNX external data |
+| `decoder.onnx` | 60.0 MB | 0.83 MB | 同上 |
+| `weights.bin` | — | 78.24 MB | 两张图共享一个权重文件 |
+| `tokenizer.json` | 6.4 MB | — | 换成 `tokenizer.tok` |
+| `tokenizer.tok` | — | 0.95 MB | 二进制词表 |
+| 合计 | **113.6 MB** | **80.2 MB（−33%）** | |
 
-更进一步只能自己重打包：裁词表（65001 → 32000 左右可省约 30%，代价是生僻词覆盖）或把 encoder/decoder 的共享 embedding 合并成一张图（省一份约 33MB）。这两条都需要图编辑并重新校验输出，暂未内置——若只要体积，直接用下面的在线模式（0 体积）。
+两个关键点：
+
+1. **共享嵌入去重**：Marian 把输入嵌入与输出投影绑定（`share_encoder_decoder_embeddings`），编码器和解码器的 ONNX 文件里各存了一份**逐字节相同**的 65001×512 uint8 表（33.3MB）。`tools/slim_pack.py` 把所有 initializer 抽到同一个 `weights.bin`，用 external-data 的 offset/length 让两张图指向同一段字节——图结构和数值完全不变，是**无损**的。
+2. **词表二进制化**：6.4MB 的 `tokenizer.json` 换成紧凑二进制（u16 长度 + UTF-8 词片 + f32 分数），降到 0.95MB，加载解析更快。
+
+验证方式：同一批句子在原包与精简包上逐句对比，**输出逐字符一致**（8/8），推理耗时不变（模型仍走 mmap，不额外拷贝）。
+
+默认中英语言包的精简产物已发布在 [Release `packs-v1`](https://github.com/neko233-com/translator233/releases/tag/packs-v1)，下载走 GitHub 镜像加速；其余 36 个语向仍按需从 Hugging Face 拉原始 int8 版本（114MB）。
+
+### 还能更小吗
+
+- 已实测 `q4` 反而更大（146MB + 150MB，保留 fp16 激活），`q4f16` 78MB 单边，`uint8` 与 `int8` 同体积——**int8 已是 HF 上可用的最小档**。
+- 剩下的 78MB 里 33MB 是词表嵌入、45MB 是 6 层 transformer 的 int8 权重，没有无损压缩空间了。
+- 再往下只有两条，都是**有损**：裁词表（65001 → 32000 可再省约 17MB，生僻词退回字符级切分，模型输入分布会变）或 4-bit 权重量化（省约一半层权重，需重写为 `MatMulNBits` 并重新验证）。当前版本没有默认启用，避免悄悄劣化译文。
+- 另一种"零体积"方案就是下面的在线模式。
 
 ## 在线模型（可选，OpenAI 兼容）
 
@@ -163,7 +181,7 @@ cmd/translator233        CLI + serve
 cmd/translator233-gui    MyGo 原生窗口
 internal/ort             零 cgo 的 ONNX Runtime 绑定（purego + 生成的 API 偏移表）
 internal/marian          Marian 编码器/解码器推理，KV cache，贪心解码
-internal/tokenizer       SentencePiece Unigram 分词（tokenizer.json）
+internal/tokenizer       SentencePiece Unigram 分词（tokenizer.json / 紧凑 tokenizer.tok）
 internal/translate       服务层：语言包路由、pivot、分句、LRU 缓存、模型 LRU、按需安装
 internal/pack            语言包目录 / 安装 / 校验
 internal/dl              GitHub / HF 镜像加速 + 分片多连接下载
@@ -179,6 +197,15 @@ internal/api             HTTP 接口与内嵌网页
 ```bash
 go run tools/genortapi/main.go <onnxruntime_c_api.h> internal/ort/api_offsets.go
 ```
+
+## 工具
+
+```bash
+pip install onnx numpy
+python tools/slim_pack.py .cache/pack/ja-en .cache/slim/ja-en
+```
+
+把任意一个已安装的语言包重打包成精简格式（`weights.bin` 共享权重 + `tokenizer.tok`），输出目录可以直接当语言包用。配合 `tools/genortapi`（生成 ONNX Runtime 的 API 偏移表）即可升级运行时版本。
 
 ## 测试
 

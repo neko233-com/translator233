@@ -20,8 +20,8 @@ func TestEmbeddedCatalog(t *testing.T) {
 	if p.Repo != "Xenova/opus-mt-zh-en" {
 		t.Fatalf("repo = %q", p.Repo)
 	}
-	if got := p.TotalSize(); got < 100<<20 {
-		t.Fatalf("unexpected pack size %d", got)
+	if got := p.TotalSize(); got < 70<<20 || got > 90<<20 {
+		t.Fatalf("default zh-en pack should be the slimmed build (~80MB), got %d", got)
 	}
 	for _, pk := range c.Packs {
 		if pk.ID != pk.Source+"-"+pk.Target {
@@ -34,13 +34,26 @@ func TestEmbeddedCatalog(t *testing.T) {
 }
 
 func TestFileURL(t *testing.T) {
-	p, _ := LoadCatalog()
-	zh, _ := p.Find("zh", "en")
-	f := zh.FilesOf()["encoder.onnx"]
+	c, _ := LoadCatalog()
+	zh, _ := c.Find("zh", "en")
+	// Default packs are slimmed and hosted on our GitHub releases.
+	f := zh.FilesOf()["weights.bin"]
 	url := zh.URL(f)
-	want := "https://huggingface.co/Xenova/opus-mt-zh-en/resolve/main/onnx/encoder_model_int8.onnx"
-	if url != want {
-		t.Fatalf("url = %q, want %q", url, want)
+	if !strings.HasPrefix(url, "https://github.com/neko233-com/translator233/releases/download/") {
+		t.Fatalf("weights.bin should come from the release, got %q", url)
+	}
+	if _, ok := zh.FilesOf()["tokenizer.tok"]; !ok {
+		t.Fatal("slim packs use tokenizer.tok")
+	}
+
+	// Packs without an explicit file map still use Hugging Face.
+	ja, ok := c.Find("ja", "en")
+	if !ok {
+		t.Fatal("ja-en pack missing")
+	}
+	want := "https://huggingface.co/Xenova/opus-mt-ja-en/resolve/main/onnx/encoder_model_int8.onnx"
+	if got := ja.URL(ja.FilesOf()["encoder.onnx"]); got != want {
+		t.Fatalf("url = %q, want %q", got, want)
 	}
 }
 

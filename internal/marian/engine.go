@@ -53,7 +53,7 @@ func Open(lib *ort.Lib, env *ort.Env, dir string, o Options) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	tok, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	tok, err := tokenizer.LoadDir(dir)
 	if err != nil {
 		return nil, err
 	}

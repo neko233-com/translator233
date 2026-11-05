@@ -79,8 +79,13 @@ func (p Pack) TotalSize() int64 {
 	return n
 }
 
-// URL builds the download URL for one file.
+// URL builds the download URL for one file. A file whose From is already an
+// absolute URL is used as is: we publish the slimmed default packs as GitHub
+// release assets, the rest come from Hugging Face.
 func (p Pack) URL(f File) string {
+	if strings.HasPrefix(f.From, "http://") || strings.HasPrefix(f.From, "https://") {
+		return f.From
+	}
 	rev := p.Rev
 	if rev == "" {
 		rev = "main"
