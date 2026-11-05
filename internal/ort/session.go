@@ -54,6 +54,9 @@ func (o *SessionOptions) Release(l *Lib) {
 	}
 }
 
+// check is call for functions whose only result is a status.
+//
+//go:uintptrescapes
 func (l *Lib) check(name string, args ...uintptr) error {
 	r1, _, _ := purego.SyscallN(l.fn(name), args...)
 	return l.status(r1)

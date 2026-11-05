@@ -119,6 +119,15 @@ func (l *Lib) fn(name string) uintptr {
 	return deref(l.api + uintptr(idx)*unsafe.Sizeof(uintptr(0)))
 }
 
+// call invokes an OrtApi member.
+//
+// //go:uintptrescapes is required: out-parameters are passed as
+// uintptr(unsafe.Pointer(&local)), and the goroutine's stack can move while
+// the foreign call runs. Without the pragma the referent stays on the stack,
+// the library writes into the old copy, and the caller reads back zero — which
+// on macOS arm64 produced "CreateSession succeeded with a NULL session".
+//
+//go:uintptrescapes
 func (l *Lib) call(name string, args ...uintptr) (uintptr, error) {
 	r1, _, _ := purego.SyscallN(l.fn(name), args...)
 	return r1, nil
