@@ -1,0 +1,398 @@
+// Command translator233 is the command line interface for local, offline
+// machine translation. It is designed to be driven by agents as well as humans.
+package main
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/neko233-com/translator233/internal/lang"
+	"github.com/neko233-com/translator233/internal/pack"
+	"github.com/neko233-com/translator233/internal/rtsetup"
+	"github.com/neko233-com/translator233/internal/translate"
+)
+
+var version = "0.1.0"
+
+const usage = `translator233 — 本地离线翻译引擎（CLI / GUI / HTTP）
+
+用法:
+  translator233 translate [文本...] -f auto -t en [--json]
+  translator233 translate --file in.txt -t en
+  echo "文本" | translator233 translate -t en
+  translator233 packs list|install|remove|search ...
+  translator233 langs
+  translator233 runtime status|install
+  translator233 serve --addr 127.0.0.1:8765
+  translator233 gui
+  translator233 version
+
+翻译参数:
+  -f, --from     源语言（默认 auto）
+  -t, --to       目标语言（必填）
+  -j, --json     输出 JSON
+      --jsonl    逐行 JSON（stdin 每行一条，适合批量/agent 管道）
+      --raw      只输出译文
+  -q, --quiet    静默（不输出进度到 stderr）
+
+环境变量:
+  TRANSLATOR233_HOME  数据目录（默认 ~/.translator233）
+`
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Print(usage)
+		os.Exit(2)
+	}
+	var err error
+	switch os.Args[1] {
+	case "translate", "tr", "t":
+		err = cmdTranslate(os.Args[2:])
+	case "packs", "pack", "p":
+		err = cmdPacks(os.Args[2:])
+	case "langs", "lang":
+		err = cmdLangs(os.Args[2:])
+	case "runtime", "rt":
+		err = cmdRuntime(os.Args[2:])
+	case "serve":
+		err = cmdServe(os.Args[2:])
+	case "gui":
+		err = cmdGUI(os.Args[2:])
+	case "version", "-v", "--version":
+		fmt.Printf("translator233 %s\n", version)
+	case "help", "-h", "--help":
+		fmt.Print(usage)
+	default:
+		// Bare text is translated with default target English.
+		err = cmdTranslate(os.Args[1:])
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error: "+err.Error())
+		os.Exit(1)
+	}
+}
+
+func newService(quiet bool) (*translate.Service, error) {
+	svc, err := translate.New(translate.Options{})
+	if err != nil {
+		return nil, err
+	}
+	return svc, nil
+}
+
+// ensureRuntime installs the ONNX Runtime on first use.
+func ensureRuntime(quiet bool) error {
+	if rtsetup.Installed() {
+		return nil
+	}
+	if !quiet {
+		fmt.Fprintln(os.Stderr, "首次运行：下载 ONNX Runtime "+rtsetup.Version+" …")
+	}
+	_, err := rtsetup.Ensure(context.Background(), progressPrinter(quiet))
+	return err
+}
+
+func progressPrinter(quiet bool) func(done, total int64) {
+	if quiet {
+		return nil
+	}
+	last := int64(-1)
+	return func(done, total int64) {
+		if total <= 0 {
+			return
+		}
+		pct := done * 100 / total
+		if pct != last && pct%10 == 0 {
+			last = pct
+			fmt.Fprintf(os.Stderr, "\r  %3d%% %s/%s", pct, human(done), human(total))
+			if pct >= 100 {
+				fmt.Fprintln(os.Stderr)
+			}
+		}
+	}
+}
+
+func human(n int64) string {
+	f := float64(n)
+	switch {
+	case f >= 1<<30:
+		return fmt.Sprintf("%.1fGB", f/(1<<30))
+	case f >= 1<<20:
+		return fmt.Sprintf("%.1fMB", f/(1<<20))
+	case f >= 1<<10:
+		return fmt.Sprintf("%.1fKB", f/(1<<10))
+	}
+	return fmt.Sprintf("%dB", n)
+}
+
+func cmdTranslate(args []string) error {
+	fs := flag.NewFlagSet("translate", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	var (
+		from   = fs.String("from", "auto", "源语言")
+		to     = fs.String("to", "", "目标语言")
+		asJSON = fs.Bool("json", false, "JSON 输出")
+		jsonl  = fs.Bool("jsonl", false, "每行一条 JSON")
+		raw    = fs.Bool("raw", false, "只输出译文")
+		quiet  = fs.Bool("quiet", false, "静默")
+		file   = fs.String("file", "", "从文件读取")
+		noDaemon = fs.Bool("no-daemon", false, "不使用后台服务")
+	)
+	fs.StringVar(from, "f", "auto", "源语言")
+	fs.StringVar(to, "t", "", "目标语言")
+	fs.BoolVar(asJSON, "j", false, "JSON 输出")
+	fs.BoolVar(quiet, "q", false, "静默")
+	if err := fs.Parse(reorder(args)); err != nil {
+		return err
+	}
+	if *to == "" {
+		return errors.New("必须指定目标语言，例如 -t en")
+	}
+	if err := ensureRuntime(*quiet); err != nil {
+		return err
+	}
+	text, err := readInput(*file, fs.Args())
+	if err != nil {
+		return err
+	}
+	if text == "" && !*jsonl {
+		return errors.New("没有输入文本")
+	}
+
+	if *jsonl {
+		svc, err := newService(*quiet)
+		if err != nil {
+			return err
+		}
+		defer svc.Close()
+		return runJSONL(svc, *from, *to, *quiet)
+	}
+
+	// A resident `serve` answers in milliseconds; fall back to in-process.
+	if !*noDaemon {
+		if dr, ok := viaDaemon(translate.Request{Text: text, Source: *from, Target: *to}, 30*time.Second); ok {
+			return printResult(dr, *asJSON, *raw, *quiet)
+		}
+	}
+
+	svc, err := newService(*quiet)
+	if err != nil {
+		return err
+	}
+	defer svc.Close()
+
+	res, err := svc.Translate(context.Background(), translate.Request{Text: text, Source: *from, Target: *to})
+	if err != nil {
+		return err
+	}
+	return printResult(res, *asJSON, *raw, *quiet)
+}
+
+func printResult(res *translate.Result, asJSON, raw, quiet bool) error {
+	switch {
+	case asJSON:
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetEscapeHTML(false)
+		return enc.Encode(res)
+	default:
+		fmt.Println(res.Text)
+		if !quiet && !raw {
+			fmt.Fprintf(os.Stderr, "[%s→%s %s %.0fms %d段]\n", res.Source, res.Target, res.Pack, res.Millis, res.Segments)
+		}
+	}
+	return nil
+}
+
+func runJSONL(svc *translate.Service, from, to string, quiet bool) error {
+	in := bufio.NewScanner(os.Stdin)
+	in.Buffer(make([]byte, 0, 64<<10), 8<<20)
+	out := json.NewEncoder(os.Stdout)
+	out.SetEscapeHTML(false)
+	for in.Scan() {
+		line := strings.TrimSpace(in.Text())
+		if line == "" {
+			continue
+		}
+		res, err := svc.Translate(context.Background(), translate.Request{Text: line, Source: from, Target: to})
+		if err != nil {
+			out.Encode(map[string]any{"error": err.Error(), "input": line})
+			continue
+		}
+		out.Encode(res)
+	}
+	return in.Err()
+}
+
+// reorder moves positional arguments behind flags so that
+// `translate "text" -t en` parses the same as `translate -t en "text"`.
+func reorder(args []string) []string {
+	valueFlags := map[string]bool{
+		"-f": true, "--f": true, "-from": true, "--from": true,
+		"-t": true, "--t": true, "-to": true, "--to": true,
+		"-file": true, "--file": true,
+	}
+	var flags, pos []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			pos = append(pos, args[i+1:]...)
+			break
+		}
+		if len(a) > 1 && strings.HasPrefix(a, "-") {
+			flags = append(flags, a)
+			name := a
+			if k := strings.IndexByte(a, '='); k >= 0 {
+				name = a[:k]
+			}
+			if valueFlags[name] && !strings.Contains(a, "=") && i+1 < len(args) {
+				i++
+				flags = append(flags, args[i])
+			}
+			continue
+		}
+		pos = append(pos, a)
+	}
+	return append(flags, pos...)
+}
+
+func readInput(file string, args []string) (string, error) {	if file != "" {
+		b, err := os.ReadFile(file)
+		return string(b), err
+	}
+	if len(args) > 0 {
+		return strings.Join(args, " "), nil
+	}
+	st, err := os.Stdin.Stat()
+	if err != nil {
+		return "", err
+	}
+	if st.Mode()&os.ModeCharDevice != 0 {
+		return "", nil
+	}
+	b, err := io.ReadAll(os.Stdin)
+	return string(b), err
+}
+
+func cmdPacks(args []string) error {
+	if len(args) == 0 {
+		return errors.New("用法: translator233 packs list|install|remove|search")
+	}
+	cat, err := pack.LoadCatalog()
+	if err != nil {
+		return err
+	}
+	store := pack.DefaultStore()
+	switch args[0] {
+	case "list", "ls":
+		installed, err := store.List()
+		if err != nil {
+			return err
+		}
+		if len(installed) == 0 {
+			fmt.Println("未安装任何语言包。可用: translator233 packs search")
+			return nil
+		}
+		for _, p := range installed {
+			fmt.Printf("%-8s %-24s %8s  %s\n", p.ID, p.Name, human(p.Bytes), p.Path)
+		}
+	case "search", "find":
+		kw := strings.ToLower(strings.Join(args[1:], " "))
+		for _, p := range cat.Packs {
+			if kw != "" && !strings.Contains(strings.ToLower(p.ID), kw) && !strings.Contains(p.Name, kw) {
+				continue
+			}
+			mark := " "
+			if store.IsInstalled(p) {
+				mark = "*"
+			}
+			fmt.Printf("%s %-8s %-24s %8s\n", mark, p.ID, p.Name, human(p.TotalSize()))
+		}
+	case "install", "add":
+		if len(args) < 2 {
+			return errors.New("用法: translator233 packs install <id> [id...]")
+		}
+		for _, id := range args[1:] {
+			p, ok := cat.Get(id)
+			if !ok {
+				return fmt.Errorf("未知语言包 %s", id)
+			}
+			if store.IsInstalled(p) {
+				fmt.Printf("%s 已安装\n", p.ID)
+				continue
+			}
+			fmt.Printf("安装 %s (%s) …\n", p.ID, human(p.TotalSize()))
+			err := store.Install(context.Background(), p, func(file string, done, total int64) {
+				if total > 0 {
+					fmt.Fprintf(os.Stderr, "\r  %-16s %3d%%", file, done*100/total)
+				}
+			})
+			fmt.Fprintln(os.Stderr)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("%s 安装完成\n", p.ID)
+		}
+	case "remove", "rm":
+		if len(args) < 2 {
+			return errors.New("用法: translator233 packs remove <id>")
+		}
+		for _, id := range args[1:] {
+			if err := store.Remove(id); err != nil {
+				return err
+			}
+			fmt.Printf("已删除 %s\n", id)
+		}
+	default:
+		return fmt.Errorf("未知子命令 %q", args[0])
+	}
+	return nil
+}
+
+func cmdLangs(args []string) error {
+	cat, err := pack.LoadCatalog()
+	if err != nil {
+		return err
+	}
+	store := pack.DefaultStore()
+	for _, p := range cat.Packs {
+		mark := " "
+		if store.IsInstalled(p) {
+			mark = "*"
+		}
+		fmt.Printf("%s %-8s %-12s → %-12s %s\n", mark, p.ID, lang.Name(p.Source), lang.Name(p.Target), human(p.TotalSize()))
+	}
+	fmt.Println("\n* = 已安装；任意两语言可经 en 中转（pivot）。")
+	return nil
+}
+
+func cmdRuntime(args []string) error {
+	sub := "status"
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "status":
+		if rtsetup.Installed() {
+			fmt.Println("已安装:", rtsetup.Path())
+		} else {
+			fmt.Println("未安装（首次翻译时自动下载）")
+		}
+	case "install":
+		if err := ensureRuntime(false); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr)
+		fmt.Println("已安装:", rtsetup.Path())
+	default:
+		return fmt.Errorf("未知子命令 %q", sub)
+	}
+	return nil
+}

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>translator233</title>
+<style>
+  :root { color-scheme: light dark; --fg:#111; --muted:#666; --bg:#fff; --line:#e3e3e3; --accent:#2f6feb; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e8e8e8; --muted:#9a9a9a; --bg:#16181c; --line:#2a2d33; --accent:#5b8bff; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.6 -apple-system,"Segoe UI",system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width: 980px; margin: 0 auto; padding: 28px 20px 40px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
+  .bar { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+  select, button, textarea { font: inherit; color: inherit; background: transparent; border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  textarea { width:100%; min-height:190px; resize:vertical; line-height:1.7; }
+  .panes { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:760px){ .panes { grid-template-columns:1fr; } }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; padding:8px 18px; cursor:pointer; }
+  button.primary:disabled { opacity:.5; cursor:default; }
+  .status { margin-top:10px; font-size:12px; color:var(--muted); min-height:1.4em; }
+  label { font-size:12px; color:var(--muted); display:block; margin-bottom:6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>translator233</h1>
+  <p class="sub">本地离线神经网络翻译 · 无需联网 · 由 Go + ONNX Runtime 驱动</p>
+  <div class="bar">
+    <select id="src"></select>
+    <span>→</span>
+    <select id="tgt"></select>
+    <button id="swap" title="交换语言">⇄</button>
+    <button id="run" class="primary">翻译</button>
+  </div>
+  <div class="panes">
+    <div><label>原文</label><textarea id="in" placeholder="输入要翻译的文本，Ctrl+Enter 翻译"></textarea></div>
+    <div><label>译文</label><textarea id="out" readonly placeholder="翻译结果"></textarea></div>
+  </div>
+  <div class="status" id="status"></div>
+</main>
+<script>
+const names = {auto:'自动检测',zh:'中文',en:'英语',ja:'日语',ko:'韩语',fr:'法语',de:'德语',es:'西班牙语',ru:'俄语',ar:'阿拉伯语',it:'意大利语',vi:'越南语',th:'泰语',id:'印尼语',tr:'土耳其语',nl:'荷兰语',pl:'波兰语',uk:'乌克兰语',hi:'印地语',sv:'瑞典语',cs:'捷克语',fi:'芬兰语',da:'丹麦语'};
+const $ = id => document.getElementById(id);
+let langs = [];
+async function boot() {
+  try {
+    const r = await fetch('/v1/languages');
+    langs = (await r.json()).languages || [];
+  } catch (e) { langs = ['en','zh']; }
+  const opts = ['auto', ...new Set(langs)];
+  for (const sel of [$('src'), $('tgt')]) {
+    sel.innerHTML = opts.map(c => `<option value="${c}">${names[c] && names[c] !== c ? names[c] + ' (' + c + ')' : c}</option>`).join('');
+  }
+  $('src').value = langs.includes('zh') ? 'zh' : 'auto';
+  $('tgt').value = langs.includes('en') ? 'en' : (langs[1] || 'en');
+}
+$('swap').onclick = () => { const a=$('src').value, b=$('tgt').value; if (a==='auto') return; $('src').value=b; $('tgt').value=a; };
+async function go() {
+  const text = $('in').value.trim();
+  if (!text) return;
+  $('run').disabled = true;
+  $('status').textContent = '翻译中…';
+  try {
+    const r = await fetch('/v1/translate', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({text, source: $('src').value, target: $('tgt').value})});
+    const j = await r.json();
+    if (!r.ok) { $('status').textContent = j.error || ('HTTP ' + r.status); return; }
+    $('out').value = j.text;
+    $('status').textContent = `${j.source} → ${j.target} · ${j.pack} · ${(j.ms||0).toFixed(0)}ms · ${j.segments} 段` + (j.cached ? ' · 缓存' : '');
+  } catch (e) {
+    $('status').textContent = String(e);
+  } finally { $('run').disabled = false; }
+}
+$('run').onclick = go;
+$('in').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) go(); });
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+bin/
+dist/
+.cache/
+.codely-cli/
+*.exe
+*.test
+*.out
+.DS_Store
+.idea/
+.vscode/

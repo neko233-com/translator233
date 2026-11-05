@@ -1,0 +1,310 @@
+{
+  "updated": "2026-11-05",
+  "packs": [
+    {
+      "id": "zh-en",
+      "source": "zh",
+      "target": "en",
+      "name": "中文 → 英语",
+      "repo": "Xenova/opus-mt-zh-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-zh",
+      "source": "en",
+      "target": "zh",
+      "name": "英语 → 中文",
+      "repo": "Xenova/opus-mt-en-zh",
+      "size": 119122297
+    },
+    {
+      "id": "ja-en",
+      "source": "ja",
+      "target": "en",
+      "name": "日语 → 英语",
+      "repo": "Xenova/opus-mt-ja-en",
+      "size": 119122297
+    },
+    {
+      "id": "ko-en",
+      "source": "ko",
+      "target": "en",
+      "name": "韩语 → 英语",
+      "repo": "Xenova/opus-mt-ko-en",
+      "size": 119122297
+    },
+    {
+      "id": "fr-en",
+      "source": "fr",
+      "target": "en",
+      "name": "法语 → 英语",
+      "repo": "Xenova/opus-mt-fr-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-fr",
+      "source": "en",
+      "target": "fr",
+      "name": "英语 → 法语",
+      "repo": "Xenova/opus-mt-en-fr",
+      "size": 119122297
+    },
+    {
+      "id": "de-en",
+      "source": "de",
+      "target": "en",
+      "name": "德语 → 英语",
+      "repo": "Xenova/opus-mt-de-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-de",
+      "source": "en",
+      "target": "de",
+      "name": "英语 → 德语",
+      "repo": "Xenova/opus-mt-en-de",
+      "size": 119122297
+    },
+    {
+      "id": "es-en",
+      "source": "es",
+      "target": "en",
+      "name": "西班牙语 → 英语",
+      "repo": "Xenova/opus-mt-es-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-es",
+      "source": "en",
+      "target": "es",
+      "name": "英语 → 西班牙语",
+      "repo": "Xenova/opus-mt-en-es",
+      "size": 119122297
+    },
+    {
+      "id": "ru-en",
+      "source": "ru",
+      "target": "en",
+      "name": "俄语 → 英语",
+      "repo": "Xenova/opus-mt-ru-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-ru",
+      "source": "en",
+      "target": "ru",
+      "name": "英语 → 俄语",
+      "repo": "Xenova/opus-mt-en-ru",
+      "size": 119122297
+    },
+    {
+      "id": "ar-en",
+      "source": "ar",
+      "target": "en",
+      "name": "阿拉伯语 → 英语",
+      "repo": "Xenova/opus-mt-ar-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-ar",
+      "source": "en",
+      "target": "ar",
+      "name": "英语 → 阿拉伯语",
+      "repo": "Xenova/opus-mt-en-ar",
+      "size": 119122297
+    },
+    {
+      "id": "it-en",
+      "source": "it",
+      "target": "en",
+      "name": "意大利语 → 英语",
+      "repo": "Xenova/opus-mt-it-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-it",
+      "source": "en",
+      "target": "it",
+      "name": "英语 → 意大利语",
+      "repo": "Xenova/opus-mt-en-it",
+      "size": 119122297
+    },
+    {
+      "id": "vi-en",
+      "source": "vi",
+      "target": "en",
+      "name": "越南语 → 英语",
+      "repo": "Xenova/opus-mt-vi-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-vi",
+      "source": "en",
+      "target": "vi",
+      "name": "英语 → 越南语",
+      "repo": "Xenova/opus-mt-en-vi",
+      "size": 119122297
+    },
+    {
+      "id": "th-en",
+      "source": "th",
+      "target": "en",
+      "name": "泰语 → 英语",
+      "repo": "Xenova/opus-mt-th-en",
+      "size": 119122297
+    },
+    {
+      "id": "id-en",
+      "source": "id",
+      "target": "en",
+      "name": "印尼语 → 英语",
+      "repo": "Xenova/opus-mt-id-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-id",
+      "source": "en",
+      "target": "id",
+      "name": "英语 → 印尼语",
+      "repo": "Xenova/opus-mt-en-id",
+      "size": 119122297
+    },
+    {
+      "id": "tr-en",
+      "source": "tr",
+      "target": "en",
+      "name": "土耳其语 → 英语",
+      "repo": "Xenova/opus-mt-tr-en",
+      "size": 119122297
+    },
+    {
+      "id": "nl-en",
+      "source": "nl",
+      "target": "en",
+      "name": "荷兰语 → 英语",
+      "repo": "Xenova/opus-mt-nl-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-nl",
+      "source": "en",
+      "target": "nl",
+      "name": "英语 → 荷兰语",
+      "repo": "Xenova/opus-mt-en-nl",
+      "size": 119122297
+    },
+    {
+      "id": "pl-en",
+      "source": "pl",
+      "target": "en",
+      "name": "波兰语 → 英语",
+      "repo": "Xenova/opus-mt-pl-en",
+      "size": 119122297
+    },
+    {
+      "id": "uk-en",
+      "source": "uk",
+      "target": "en",
+      "name": "乌克兰语 → 英语",
+      "repo": "Xenova/opus-mt-uk-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-uk",
+      "source": "en",
+      "target": "uk",
+      "name": "英语 → 乌克兰语",
+      "repo": "Xenova/opus-mt-en-uk",
+      "size": 119122297
+    },
+    {
+      "id": "hi-en",
+      "source": "hi",
+      "target": "en",
+      "name": "印地语 → 英语",
+      "repo": "Xenova/opus-mt-hi-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-hi",
+      "source": "en",
+      "target": "hi",
+      "name": "英语 → 印地语",
+      "repo": "Xenova/opus-mt-en-hi",
+      "size": 119122297
+    },
+    {
+      "id": "sv-en",
+      "source": "sv",
+      "target": "en",
+      "name": "瑞典语 → 英语",
+      "repo": "Xenova/opus-mt-sv-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-sv",
+      "source": "en",
+      "target": "sv",
+      "name": "英语 → 瑞典语",
+      "repo": "Xenova/opus-mt-en-sv",
+      "size": 119122297
+    },
+    {
+      "id": "cs-en",
+      "source": "cs",
+      "target": "en",
+      "name": "捷克语 → 英语",
+      "repo": "Xenova/opus-mt-cs-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-cs",
+      "source": "en",
+      "target": "cs",
+      "name": "英语 → 捷克语",
+      "repo": "Xenova/opus-mt-en-cs",
+      "size": 119122297
+    },
+    {
+      "id": "en-ro",
+      "source": "en",
+      "target": "ro",
+      "name": "英语 → ",
+      "repo": "Xenova/opus-mt-en-ro",
+      "size": 119122297
+    },
+    {
+      "id": "fi-en",
+      "source": "fi",
+      "target": "en",
+      "name": "芬兰语 → 英语",
+      "repo": "Xenova/opus-mt-fi-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-fi",
+      "source": "en",
+      "target": "fi",
+      "name": "英语 → 芬兰语",
+      "repo": "Xenova/opus-mt-en-fi",
+      "size": 119122297
+    },
+    {
+      "id": "da-en",
+      "source": "da",
+      "target": "en",
+      "name": "丹麦语 → 英语",
+      "repo": "Xenova/opus-mt-da-en",
+      "size": 119122297
+    },
+    {
+      "id": "en-da",
+      "source": "en",
+      "target": "da",
+      "name": "英语 → 丹麦语",
+      "repo": "Xenova/opus-mt-en-da",
+      "size": 119122297
+    }
+  ]
+}
+
