@@ -3,6 +3,7 @@ package translate
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSplitKeepsSentences(t *testing.T) {
@@ -52,6 +53,27 @@ func TestJoinSegments(t *testing.T) {
 	for _, c := range cases {
 		if got := joinSegments(c.in); got != c.want {
 			t.Errorf("joinSegments(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestShouldUnload(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		name     string
+		lastUsed time.Time
+		busy     int
+		idle     time.Duration
+		want     bool
+	}{
+		{"idle engine", now.Add(-10 * time.Minute), 0, 5 * time.Minute, true},
+		{"busy engine", now.Add(-10 * time.Minute), 1, 5 * time.Minute, false},
+		{"recently used", now.Add(-time.Minute), 0, 5 * time.Minute, false},
+		{"unloading disabled", now.Add(-time.Hour), 0, 0, false},
+	}
+	for _, c := range cases {
+		if got := shouldUnload(now, c.lastUsed, c.busy, c.idle); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
 	}
 }

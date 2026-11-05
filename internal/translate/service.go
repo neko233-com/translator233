@@ -40,6 +40,10 @@ type Options struct {
 	Engine string
 	// SessionConfig holds extra ONNX Runtime session options.
 	SessionConfig map[string]string
+	// IdleTimeout unloads a model that has not been used for this long, so a
+	// daemon left running drops back to ~80MB. 0 means 5 minutes, negative
+	// disables unloading.
+	IdleTimeout time.Duration
 	// LLM configures the optional OpenAI-compatible backend.
 	LLM *llm.Config
 }
@@ -68,6 +72,8 @@ type Service struct {
 	engineMode string
 	llm        *llm.Config
 	sessCfg    map[string]string
+	idle       time.Duration
+	stopCh     chan struct{}
 
 	mu      sync.Mutex
 	lib     *ort.Lib
@@ -80,6 +86,7 @@ type Service struct {
 type engineEntry struct {
 	eng      *marian.Engine
 	lastUsed time.Time
+	busy     int
 }
 
 // New creates a service. The ONNX Runtime library is loaded on first use.
@@ -115,6 +122,12 @@ func New(o Options) (*Service, error) {
 	if o.Engine == "" {
 		o.Engine = "local"
 	}
+	if o.IdleTimeout == 0 {
+		o.IdleTimeout = 5 * time.Minute
+		if v, err := strconv.Atoi(os.Getenv("TRANSLATOR233_IDLE_SECONDS")); err == nil {
+			o.IdleTimeout = time.Duration(v) * time.Second
+		}
+	}
 	// TRANSLATOR233_SESSION_CONFIG="enable_cpu_mem_arena=0;other=..." lets ops
 	// trade speed for memory without a rebuild.
 	merged := map[string]string{}
@@ -137,6 +150,7 @@ func New(o Options) (*Service, error) {
 		engineMode: o.Engine,
 		llm:        o.LLM,
 		sessCfg:    merged,
+		idle:       o.IdleTimeout,
 		engines:    make(map[string]*engineEntry),
 	}, nil
 }
@@ -207,7 +221,7 @@ func (s *Service) Translate(ctx context.Context, req Request) (*Result, error) {
 
 	segs := Split(text, s.maxChr)
 	for _, st := range steps {
-		eng, err := s.engine(st.id)
+		eng, release, err := s.engine(st.id)
 		if err != nil {
 			return nil, err
 		}
@@ -216,14 +230,17 @@ func (s *Service) Translate(ctx context.Context, req Request) (*Result, error) {
 				continue
 			}
 			if err := ctx.Err(); err != nil {
+				release()
 				return nil, err
 			}
 			tr, err := eng.Translate(seg)
 			if err != nil {
+				release()
 				return nil, err
 			}
 			segs[i] = tr
 		}
+		release()
 	}
 	joined := joinSegments(segs)
 	res := &Result{
@@ -329,8 +346,11 @@ func (s *Service) Warm() error {
 		if i >= s.maxLd {
 			break
 		}
-		if _, err := s.engine(p.ID); err != nil {
+		if _, release, err := s.engine(p.ID); err != nil {
 			return err
+		} else {
+			// Keep the model resident; only the idle reaper unloads it.
+			release()
 		}
 	}
 	return nil
@@ -342,26 +362,87 @@ func (s *Service) HasPacks() bool {
 	return err == nil && len(list) > 0
 }
 
-func (s *Service) engine(id string) (*marian.Engine, error) {
+// engine returns a loaded engine and a release function that must be called
+// when the caller stops using it; the idle reaper never unloads a busy engine.
+func (s *Service) engine(id string) (*marian.Engine, func(), error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if e, ok := s.engines[id]; ok {
+	e, ok := s.engines[id]
+	if !ok {
+		if err := s.loadRuntimeLocked(); err != nil {
+			return nil, nil, err
+		}
+		if s.loaded >= s.maxLd {
+			s.evictLocked()
+		}
+		eng, err := marian.Open(s.lib, s.env, s.store.Path(id), marian.Options{Threads: s.threads, Config: s.sessCfg})
+		if err != nil {
+			return nil, nil, err
+		}
+		e = &engineEntry{eng: eng}
+		s.engines[id] = e
+		s.loaded++
+		s.startReaperLocked()
+	}
+	e.busy++
+	e.lastUsed = time.Now()
+	eng := e.eng
+	return eng, func() {
+		s.mu.Lock()
+		e.busy--
 		e.lastUsed = time.Now()
-		return e.eng, nil
+		s.mu.Unlock()
+	}, nil
+}
+
+// startReaperLocked starts the idle unloader once per service.
+func (s *Service) startReaperLocked() {
+	if s.idle <= 0 || s.stopCh != nil {
+		return
 	}
-	if err := s.loadRuntimeLocked(); err != nil {
-		return nil, err
+	s.stopCh = make(chan struct{})
+	interval := s.idle / 4
+	if interval < 5*time.Second {
+		interval = 5 * time.Second
 	}
-	if s.loaded >= s.maxLd {
-		s.evictLocked()
+	if interval > 30*time.Second {
+		interval = 30 * time.Second
 	}
-	eng, err := marian.Open(s.lib, s.env, s.store.Path(id), marian.Options{Threads: s.threads, Config: s.sessCfg})
-	if err != nil {
-		return nil, err
+	go func(stop chan struct{}, d time.Duration) {
+		t := time.NewTicker(d)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				s.reap()
+			}
+		}
+	}(s.stopCh, interval)
+}
+
+// shouldUnload reports whether an idle engine may be closed.
+func shouldUnload(now, lastUsed time.Time, busy int, idle time.Duration) bool {
+	return idle > 0 && busy == 0 && now.Sub(lastUsed) >= idle
+}
+
+// reap unloads engines that have been idle for longer than the timeout.
+func (s *Service) reap() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.idle <= 0 {
+		return
 	}
-	s.engines[id] = &engineEntry{eng: eng, lastUsed: time.Now()}
-	s.loaded++
-	return eng, nil
+	now := time.Now()
+	for id, e := range s.engines {
+		if !shouldUnload(now, e.lastUsed, e.busy, s.idle) {
+			continue
+		}
+		e.eng.Close()
+		delete(s.engines, id)
+		s.loaded--
+	}
 }
 
 func (s *Service) loadRuntimeLocked() error {
@@ -416,6 +497,10 @@ func (s *Service) Close() {
 		return
 	}
 	s.closed = true
+	if s.stopCh != nil {
+		close(s.stopCh)
+		s.stopCh = nil
+	}
 	for id, e := range s.engines {
 		e.eng.Close()
 		delete(s.engines, id)

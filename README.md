@@ -42,15 +42,19 @@ bin/translator233 serve
 | 命中缓存的调用（含进程启动） | **15ms** |
 | 单句推理（20 token 左右） | 120–200ms |
 | 常驻内存（2 个语向） | 约 500MB |
+| 空闲超时后（自动卸载模型） | **约 107MB**（默认 5 分钟，重新加载约 470ms） |
 | GUI 空闲内存（未翻译） | **76MB** |
 
 调优开关：
 
 ```bash
-TRANSLATOR233_THREADS=8                 # 推理线程数（默认 min(CPU,4)，实测 1/2/4/8 差异 <7%）
+TRANSLATOR233_IDLE_SECONDS=300          # 空闲多久卸载模型（0 关闭自动卸载，默认 300 秒）
 TRANSLATOR233_MAX_MODELS=1              # 常驻模型数（默认 2；1 可把内存从 ~500MB 降到 ~350MB）
+TRANSLATOR233_THREADS=8                 # 推理线程数（默认 min(CPU,4)，实测 1/2/4/8 差异 <7%）
 TRANSLATOR233_SESSION_CONFIG="k=v;..."  # 透传 ORT session 配置
 ```
+
+内存策略：模型按需加载、按 LRU 淘汰，并在空闲 `IDLE_SECONDS` 后自动释放（实测 497MB → 107MB）；正在翻译的模型不会被回收。
 
 下载相关：默认 16 路分片并发，包内多个文件并行下载且大文件优先；`packs install -c N` 可覆盖。
 
