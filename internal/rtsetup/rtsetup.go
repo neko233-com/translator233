@@ -112,9 +112,17 @@ func Ensure(ctx context.Context, progress func(done, total int64)) (string, erro
 	return Path(), nil
 }
 
-func wanted(name string) bool {
+// wanted reports whether an archive entry is the runtime library we load.
+// The macOS archive also ships a dSYM bundle whose DWARF file is named like the
+// library; loading that fails with "unloadable mach-o file type 10".
+func wanted(name string) bool { return wantedFor(runtime.GOOS, name) }
+
+func wantedFor(goos, name string) bool {
 	base := filepath.Base(name)
-	switch runtime.GOOS {
+	if strings.Contains(name, ".dSYM") {
+		return false
+	}
+	switch goos {
 	case "windows":
 		return strings.EqualFold(base, "onnxruntime.dll")
 	case "darwin":
@@ -124,18 +132,23 @@ func wanted(name string) bool {
 	}
 }
 
+// extractZip writes the first matching regular file to the library path.
 func extractZip(zipPath, dstDir string) error {
+	return extractZipFor(zipPath, dstDir, runtime.GOOS, LibName())
+}
+
+func extractZipFor(zipPath, dstDir, goos, libName string) error {
 	r, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
 	for _, f := range r.File {
-		if f.FileInfo().IsDir() || !wanted(f.Name) {
+		if f.FileInfo().IsDir() || !wantedFor(goos, f.Name) {
 			continue
 		}
-		out := filepath.Join(dstDir, LibName())
-		if err := writeFile(out, func(w io.Writer) error {
+		out := filepath.Join(dstDir, libName)
+		return writeFile(out, func(w io.Writer) error {
 			rc, err := f.Open()
 			if err != nil {
 				return err
@@ -143,14 +156,16 @@ func extractZip(zipPath, dstDir string) error {
 			defer rc.Close()
 			_, err = io.Copy(w, rc)
 			return err
-		}); err != nil {
-			return err
-		}
+		})
 	}
-	return nil
+	return fmt.Errorf("no runtime library in %s", filepath.Base(zipPath))
 }
 
 func extractTarGz(tgzPath, dstDir string) error {
+	return extractTarGzFor(tgzPath, dstDir, runtime.GOOS, LibName())
+}
+
+func extractTarGzFor(tgzPath, dstDir, goos, libName string) error {
 	f, err := os.Open(tgzPath)
 	if err != nil {
 		return err
@@ -165,22 +180,20 @@ func extractTarGz(tgzPath, dstDir string) error {
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
-			return nil
+			return fmt.Errorf("no runtime library in %s", filepath.Base(tgzPath))
 		}
 		if err != nil {
 			return err
 		}
-		if hdr.Typeflag != tar.TypeReg || !wanted(hdr.Name) {
+		if hdr.Typeflag != tar.TypeReg || !wantedFor(goos, hdr.Name) {
 			continue
 		}
-		out := filepath.Join(dstDir, LibName())
+		out := filepath.Join(dstDir, libName)
 		body := tr
-		if err := writeFile(out, func(w io.Writer) error {
+		return writeFile(out, func(w io.Writer) error {
 			_, err := io.Copy(w, body)
 			return err
-		}); err != nil {
-			return err
-		}
+		})
 	}
 }
 
