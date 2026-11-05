@@ -54,27 +54,68 @@ jobs:
   release:
     needs: test
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Cross build
+
+      - name: Version
+        shell: pwsh
         run: |
-          set -e
-          mkdir -p dist
-          for target in windows/amd64 windows/arm64 darwin/arm64; do
-            os=${target%/*}; arch=${target#*/}
-            ext=""; ldflags="-s -w"
-            if [ "$os" = "windows" ]; then ext=".exe"; fi
-            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "$ldflags" \
-              -o "dist/translator233-$os-$arch$ext" ./cmd/translator233
-            if [ "$os" = "windows" ]; then ldflags="-s -w -H=windowsgui"; fi
-            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "$ldflags" \
-              -o "dist/translator233-gui-$os-$arch$ext" ./cmd/translator233-gui
-          done
-          ls -la dist
+          $v = "${{ github.ref_name }}".TrimStart("v")
+          "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "building $v"
+
+      - name: Build binaries
+        shell: pwsh
+        run: |
+          $v = $env:VERSION
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $targets = @(@{os="windows";arch="amd64"}, @{os="windows";arch="arm64"}, @{os="darwin";arch="arm64"})
+          foreach ($t in $targets) {
+            $ext = ""; if ($t.os -eq "windows") { $ext = ".exe" }
+            $env:CGO_ENABLED = "0"; $env:GOOS = $t.os; $env:GOARCH = $t.arch
+            go build -trimpath -ldflags "-s -w -X main.version=$v" `
+              -o "dist/translator233-$($t.os)-$($t.arch)$ext" ./cmd/translator233
+            if ($LASTEXITCODE -ne 0) { throw "cli build failed for $($t.os)/$($t.arch)" }
+            $guiFlags = "-s -w -X main.version=$v"
+            if ($t.os -eq "windows") { $guiFlags = "$guiFlags -H=windowsgui" }
+            go build -trimpath -ldflags $guiFlags `
+              -o "dist/translator233-gui-$($t.os)-$($t.arch)$ext" ./cmd/translator233-gui
+            if ($LASTEXITCODE -ne 0) { throw "gui build failed for $($t.os)/$($t.arch)" }
+          }
+          $env:GOOS = ""; $env:GOARCH = ""; $env:CGO_ENABLED = "1"
+          Get-ChildItem dist | Select-Object Name, Length
+
+      - name: Build MSI (per-user, no UAC)
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version "5.*"
+          $env:PATH = "$env:PATH;$env:USERPROFILE\.dotnet\tools"
+          foreach ($arch in @("amd64", "arm64")) {
+            $stage = "dist/stage-$arch"
+            New-Item -ItemType Directory -Force $stage | Out-Null
+            Copy-Item "dist/translator233-windows-$arch.exe" "$stage/translator233.exe"
+            Copy-Item "dist/translator233-gui-windows-$arch.exe" "$stage/translator233-gui.exe"
+            Copy-Item README.md, LICENSE $stage
+            wix build installer/translator233.wxs -d Version=$env:VERSION -d StageDir=$stage `
+              -o "dist/translator233-windows-$arch.msi"
+            if ($LASTEXITCODE -ne 0) { throw "wix failed for $arch" }
+          }
+          Remove-Item -Recurse -Force dist/stage-*
+          Get-ChildItem dist/*.msi | Select-Object Name, Length
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $lines = Get-ChildItem dist -File | Where-Object { $_.Name -ne "checksums.txt" } | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          }
+          $lines | Out-File -FilePath dist/checksums.txt -Encoding ascii
+          Get-Content dist/checksums.txt
+
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*

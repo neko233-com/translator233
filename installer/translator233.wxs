@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Per-user Windows installer for translator233.
+
+  Scope="perUser" installs under %LOCALAPPDATA%\Programs and needs no
+  elevation, which also lets the app update itself by running the next MSI
+  silently.
+
+  Build (from the repository root):
+    wix build installer/translator233.wxs ^
+      -d Version=1.0.1 -d StageDir=dist\stage-x64 -d Platform=x64 ^
+      -o dist\translator233-1.0.1-x64.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="translator233"
+      Manufacturer="neko233"
+      Version="$(var.Version)"
+      UpgradeCode="7F3A5C41-2B8E-4D6A-9C1F-5E0B8A2D4C77"
+      Scope="perUser"
+      Compressed="yes">
+
+    <SummaryInformation Description="translator233 — 本地离线翻译（CLI + GUI）" />
+
+    <MajorUpgrade DowngradeErrorMessage="已经安装了更新版本的 translator233。" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="translator233" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppMenuFolder" Name="translator233" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="translator233" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentGroupRef Id="AppShortcuts" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Component Id="CliExe" Guid="*">
+        <File Id="CliExeFile" Source="$(var.StageDir)\translator233.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="GuiExe" Guid="*">
+        <File Id="GuiExeFile" Source="$(var.StageDir)\translator233-gui.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="Readme" Guid="*">
+        <File Id="ReadmeFile" Source="$(var.StageDir)\README.md" KeyPath="yes" />
+      </Component>
+      <Component Id="License" Guid="*">
+        <File Id="LicenseFile" Source="$(var.StageDir)\LICENSE" KeyPath="yes" />
+      </Component>
+      <Component Id="UserPath" Guid="9C3E7C1A-6B2F-4A9E-8F5D-2B7C41E0A3D1" KeyPath="yes">
+        <Environment Id="PathEntry" Name="PATH" Value="[INSTALLFOLDER]"
+                     Action="set" Part="last" Permanent="no" System="no" />
+      </Component>
+      <Component Id="InstallFolderRegistry" Guid="4D9A1E52-7C6B-4F3A-B1D8-6E2C9A75F0B2" KeyPath="yes">
+        <RegistryValue Root="HKCU" Key="Software\neko233\translator233"
+                       Name="InstallDir" Type="string" Value="[INSTALLFOLDER]" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="AppShortcuts" Directory="AppMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="GuiShortcut"
+                  Name="translator233"
+                  Description="本地离线神经网络翻译"
+                  Target="[INSTALLFOLDER]translator233-gui.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveAppMenuFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\neko233\translator233"
+                       Name="Shortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>
+
+

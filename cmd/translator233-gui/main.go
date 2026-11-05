@@ -10,6 +10,9 @@ import (
 	"github.com/neko233-com/translator233/internal/gui"
 )
 
+// version is stamped at build time with -X main.version.
+var version = "1.0.1"
+
 func windowOptions() mygo.WindowOptions {
 	return mygo.WindowOptions{
 		Title:     "translator233 — 本地离线翻译",
@@ -22,12 +25,15 @@ func windowOptions() mygo.WindowOptions {
 
 func main() {
 	state := gui.New()
+	state.Version = version
 	mygo.App.WhenReady(func() {
 		opts := windowOptions()
 		opts.Content = ui.View(state.View)
 		win := mygo.NewWindow(opts)
 		state.BindRedraw(func(fn func()) { win.Update(fn) })
+		state.BindCloser(func() { win.Close() })
 		state.Start()
+		state.CheckUpdate()
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)

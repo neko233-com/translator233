@@ -41,6 +41,12 @@ type State struct {
 	Busy bool
 	Note string
 	ms   float64
+	// Version is the running build, filled by the command.
+	Version string
+	// UpdateTo is the newer release found on GitHub, if any.
+	UpdateTo string
+	Updating bool
+	closer   func()
 }
 
 // New builds a state backed by a real translation service.
@@ -262,6 +268,8 @@ func (s *State) View(c *ui.Context) {
 	busy := s.Busy
 	note := s.Note
 	ms := s.ms
+	updateTo := s.UpdateTo
+	updating := s.Updating
 	s.mu.Unlock()
 
 	srcDisplay := s.display[src]
@@ -273,7 +281,7 @@ func (s *State) View(c *ui.Context) {
 		s.glow(c, 720, 300, 620, p.glowB)
 
 		ui.Column(c).Fill().Padding(24, 28).Gap(16).Children(func() {
-			s.header(c, p, note)
+			s.header(c, p, note, updateTo, updating)
 
 			// The main glass card.
 			ui.Column(c).Fill().Radius(26).Padding(20).Gap(14).
@@ -322,7 +330,7 @@ func (s *State) glow(c *ui.Context, left, top, size float32, color ui.Color) {
 		})
 }
 
-func (s *State) header(c *ui.Context, p palette, note string) {
+func (s *State) header(c *ui.Context, p palette, note string, updateTo string, updating bool) {
 	ui.Row(c).Gap(12).Children(func() {
 		ui.Box(c).Width(38).Height(38).Radius(12).
 			Gradient(ui.Hex("#6FA8FF"), ui.Hex("#2F6FEB"), 145).
@@ -332,6 +340,12 @@ func (s *State) header(c *ui.Context, p palette, note string) {
 			ui.Text(c, "本地离线神经网络翻译").FontSize(11).TextColor(p.muted)
 		})
 		ui.Spacer(c)
+		if updateTo != "" {
+			if ui.PrimaryButton(c, "更新到 v"+updateTo).Label("立即更新").Radius(12).
+				Disabled(updating).Clicked() {
+				s.ApplyUpdate()
+			}
+		}
 		ui.Row(c).Gap(8).Padding(8, 14).Radius(14).
 			Background(p.inset).Border(1, p.cardBorder).
 			Children(func() {

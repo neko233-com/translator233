@@ -22,7 +22,7 @@ import (
 	"github.com/neko233-com/translator233/internal/translate"
 )
 
-var version = "0.1.0"
+var version = "1.0.1"
 
 // noAutoInstall disables downloading missing language packs.
 var noAutoInstall bool
@@ -41,6 +41,7 @@ const usage = `translator233 — 本地离线翻译引擎（CLI / GUI / HTTP）
   translator233 runtime status|install
   translator233 serve --addr 127.0.0.1:8765
   translator233 gui
+  translator233 update [--check] [--json]
   translator233 config show|set-llm|clear-llm
   translator233 version
 
@@ -82,6 +83,8 @@ func main() {
 		err = cmdServe(os.Args[2:])
 	case "gui":
 		err = cmdGUI(os.Args[2:])
+	case "update", "upgrade":
+		err = cmdUpdate(os.Args[2:])
 	case "config", "cfg":
 		err = cmdConfig(os.Args[2:])
 	case "version", "-v", "--version":
