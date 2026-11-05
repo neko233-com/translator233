@@ -31,6 +31,8 @@ type Config struct {
 type Options struct {
 	Threads int
 	MaxLen  int
+	// Config holds extra ORT session config entries.
+	Config map[string]string
 }
 
 // Engine is a loaded translation model for one language direction.
@@ -61,7 +63,7 @@ func Open(lib *ort.Lib, env *ort.Env, dir string, o Options) (*Engine, error) {
 	if threads <= 0 {
 		threads = 4
 	}
-	so, err := lib.NewSessionOptions(threads)
+	so, err := lib.NewSessionOptionsWithConfig(threads, o.Config)
 	if err != nil {
 		return nil, err
 	}

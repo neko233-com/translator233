@@ -7,6 +7,7 @@ import (
 	"container/list"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,8 @@ type Options struct {
 	// Engine selects the backend: "local" (default), "llm", or "auto"
 	// (local first, LLM when no local pack is available).
 	Engine string
+	// SessionConfig holds extra ONNX Runtime session options.
+	SessionConfig map[string]string
 	// LLM configures the optional OpenAI-compatible backend.
 	LLM *llm.Config
 }
@@ -63,6 +66,7 @@ type Service struct {
 	prog       func(packID, file string, done, total int64)
 	engineMode string
 	llm        *llm.Config
+	sessCfg    map[string]string
 
 	mu      sync.Mutex
 	lib     *ort.Lib
@@ -107,6 +111,15 @@ func New(o Options) (*Service, error) {
 	if o.Engine == "" {
 		o.Engine = "local"
 	}
+	// TRANSLATOR233_SESSION_CONFIG="enable_cpu_mem_arena=0;other=..." lets ops
+	// trade speed for memory without a rebuild.
+	merged := map[string]string{}
+	for k, v := range parseSessionConfig(os.Getenv("TRANSLATOR233_SESSION_CONFIG")) {
+		merged[k] = v
+	}
+	for k, v := range o.SessionConfig {
+		merged[k] = v
+	}
 	return &Service{
 		store:      o.Store,
 		catalog:    o.Catalog,
@@ -119,6 +132,7 @@ func New(o Options) (*Service, error) {
 		prog:       o.Progress,
 		engineMode: o.Engine,
 		llm:        o.LLM,
+		sessCfg:    merged,
 		engines:    make(map[string]*engineEntry),
 	}, nil
 }
@@ -278,12 +292,40 @@ func (s *Service) EnsureDefaults(ctx context.Context) error {
 	if s.HasPacks() {
 		return nil
 	}
-	for _, id := range DefaultPacks {
+	var wg sync.WaitGroup
+	errs := make([]error, len(DefaultPacks))
+	for i, id := range DefaultPacks {
 		p, ok := s.catalog.Get(id)
 		if !ok {
 			continue
 		}
-		if err := s.InstallPack(ctx, p); err != nil {
+		wg.Add(1)
+		go func(i int, p pack.Pack) {
+			defer wg.Done()
+			errs[i] = s.InstallPack(ctx, p)
+		}(i, p)
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Warm loads up to MaxLoaded installed packs so the first request after a
+// daemon start does not pay the ~350ms model load.
+func (s *Service) Warm() error {
+	installed, err := s.store.List()
+	if err != nil {
+		return err
+	}
+	for i, p := range installed {
+		if i >= s.maxLd {
+			break
+		}
+		if _, err := s.engine(p.ID); err != nil {
 			return err
 		}
 	}
@@ -309,7 +351,7 @@ func (s *Service) engine(id string) (*marian.Engine, error) {
 	if s.loaded >= s.maxLd {
 		s.evictLocked()
 	}
-	eng, err := marian.Open(s.lib, s.env, s.store.Path(id), marian.Options{Threads: s.threads})
+	eng, err := marian.Open(s.lib, s.env, s.store.Path(id), marian.Options{Threads: s.threads, Config: s.sessCfg})
 	if err != nil {
 		return nil, err
 	}
@@ -581,4 +623,19 @@ func (c *textCache) Add(key, val string) {
 		c.ll.Remove(last)
 		delete(c.it, last.Value.(*cacheItem).key)
 	}
+}
+
+// parseSessionConfig reads "k=v;k2=v2" into a map.
+func parseSessionConfig(s string) map[string]string {
+	out := map[string]string{}
+	for _, part := range strings.Split(s, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if k, v, ok := strings.Cut(part, "="); ok {
+			out[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	return out
 }

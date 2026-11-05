@@ -13,6 +13,12 @@ type SessionOptions struct{ ptr uintptr }
 
 // NewSessionOptions creates default options tuned for low-latency CPU inference.
 func (l *Lib) NewSessionOptions(threads int) (*SessionOptions, error) {
+	return l.NewSessionOptionsWithConfig(threads, nil)
+}
+
+// NewSessionOptionsWithConfig also applies session config entries such as
+// "enable_cpu_mem_arena" or "session.intra_op.allow_spinning".
+func (l *Lib) NewSessionOptionsWithConfig(threads int, cfg map[string]string) (*SessionOptions, error) {
 	var opts uintptr
 	r1, _ := l.call("CreateSessionOptions", uintptr(unsafe.Pointer(&opts)))
 	if err := l.status(r1); err != nil {
@@ -29,6 +35,13 @@ func (l *Lib) NewSessionOptions(threads int) (*SessionOptions, error) {
 	}
 	if err := l.check("SetSessionLogSeverityLevel", opts, LogError); err != nil {
 		return nil, err
+	}
+	for k, v := range cfg {
+		kb, vb := cbytes(k), cbytes(v)
+		if err := l.check("AddSessionConfigEntry", opts,
+			uintptr(unsafe.Pointer(&kb[0])), uintptr(unsafe.Pointer(&vb[0]))); err != nil {
+			return nil, err
+		}
 	}
 	return o, nil
 }

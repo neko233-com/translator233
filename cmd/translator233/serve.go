@@ -47,6 +47,15 @@ func cmdServe(args []string) error {
 	if err := writeDaemonFile(ln.Addr().String()); err == nil {
 		defer removeDaemonFile()
 	}
+	// Pre-load installed packs so the first request is already warm.
+	go func() {
+		start := time.Now()
+		if err := svc.Warm(); err != nil {
+			fmt.Fprintln(os.Stderr, "预热失败:", err)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "已预热语言包（%v）\n", time.Since(start).Round(time.Millisecond))
+	}()
 	return srv.Serve(ln)
 }
 

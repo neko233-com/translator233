@@ -108,25 +108,37 @@ func newService(quiet bool) (*translate.Service, error) {
 	})
 }
 
-var announced sync.Map
-
-// packProgress renders language pack downloads on stderr.
+// packProgress renders language pack downloads on stderr, aggregated per pack
+// so parallel files share one line.
 func packProgress(quiet bool) func(packID, file string, done, total int64) {
 	if quiet {
 		return nil
 	}
+	var (
+		mu     sync.Mutex
+		last   time.Time
+		states = map[string]map[string][2]int64{}
+	)
 	return func(packID, file string, done, total int64) {
-		if total <= 0 {
+		mu.Lock()
+		defer mu.Unlock()
+		files := states[packID]
+		if files == nil {
+			files = map[string][2]int64{}
+			states[packID] = files
+			fmt.Fprintf(os.Stderr, "下载语言包 %s …\n", packID)
+		}
+		files[file] = [2]int64{done, total}
+		var d, t int64
+		for _, v := range files {
+			d += v[0]
+			t += v[1]
+		}
+		if t <= 0 || (time.Since(last) < 120*time.Millisecond && d < t) {
 			return
 		}
-		if _, seen := announced.LoadOrStore(packID, true); !seen {
-			fmt.Fprintf(os.Stderr, "下载语言包 %s（%s）…\n", packID, human(total))
-		}
-		pct := done * 100 / total
-		fmt.Fprintf(os.Stderr, "\r  %-32s %3d%%", packID+"/"+file, pct)
-		if done >= total {
-			fmt.Fprintln(os.Stderr)
-		}
+		last = time.Now()
+		fmt.Fprintf(os.Stderr, "\r  %-8s %3d%%  %s / %s", packID, d*100/t, human(d), human(t))
 	}
 }
 
@@ -405,6 +417,7 @@ func cmdPacks(args []string) error {
 			return errors.New("用法: translator233 packs install <id> [id...] [-c 8]")
 		}
 		store.Connections = conns
+		agg := packProgress(false)
 		for _, id := range ids {
 			p, ok := cat.Get(id)
 			if !ok {
@@ -416,9 +429,7 @@ func cmdPacks(args []string) error {
 			}
 			fmt.Printf("安装 %s (%s) …\n", p.ID, human(p.TotalSize()))
 			err := store.Install(context.Background(), p, func(file string, done, total int64) {
-				if total > 0 {
-					fmt.Fprintf(os.Stderr, "\r  %-16s %3d%%", file, done*100/total)
-				}
+				agg(p.ID, file, done, total)
 			})
 			fmt.Fprintln(os.Stderr)
 			if err != nil {

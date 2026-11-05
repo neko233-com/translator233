@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -20,6 +21,11 @@ func libExt() string {
 }
 
 func defaultThreads() int {
+	if v := os.Getenv("TRANSLATOR233_THREADS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
 	// Marian models are small: past 4 threads the synchronization cost cancels
 	// the gain, and extra threads starve concurrent requests.
 	n := runtime.NumCPU()

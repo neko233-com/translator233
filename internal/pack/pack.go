@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/neko233-com/translator233/internal/appdir"
@@ -209,29 +210,58 @@ func (s *Store) Install(ctx context.Context, p Pack, prog Progress) error {
 	for name := range p.FilesOf() {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	// Largest first, so the big weight blob is not queued behind the small files.
+	sort.Slice(names, func(i, j int) bool {
+		return p.FilesOf()[names[i]].Size > p.FilesOf()[names[j]].Size
+	})
 	conns := s.Connections
 	if conns <= 0 {
 		conns = dl.DefaultConnections
 	}
-	for _, name := range names {
+
+	var (
+		mu    sync.Mutex
+		wg    sync.WaitGroup
+		sem   = make(chan struct{}, 3)
+		errs  = make([]error, len(names))
+		first error
+	)
+	for i, name := range names {
 		f := p.FilesOf()[name]
 		dst := filepath.Join(dir, name)
 		if st, err := os.Stat(dst); err == nil && st.Size() > 0 && (f.Size == 0 || st.Size() == f.Size) {
 			continue
 		}
-		_, err := dl.To(ctx, p.URL(f), dst, dl.Options{
-			Timeout:     60e9,
-			Connections: conns,
-			Progress: func(done, total int64) {
-				if prog != nil {
+		wg.Add(1)
+		go func(i int, name string, f File) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			_, err := dl.To(ctx, p.URL(f), dst, dl.Options{
+				Timeout:     60e9,
+				Connections: conns,
+				Progress: func(done, total int64) {
+					if prog == nil {
+						return
+					}
+					mu.Lock()
 					prog(name, done, total)
-				}
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+					mu.Unlock()
+				},
+			})
+			if err != nil {
+				errs[i] = fmt.Errorf("%s: %w", name, err)
+			}
+		}(i, name, f)
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil && first == nil {
+			first = err
 		}
+	}
+	if first != nil {
+		return first
 	}
 	meta, _ := json.MarshalIndent(struct {
 		Pack
